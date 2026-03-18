@@ -11,6 +11,7 @@
 #include "../../include/network.h"
 #include "../../include/addresses.h"
 #include "../../include/address_resolver.h"
+#include "../../include/hooks.h"
 #include "../../include/pattern_scanner.h"
 #include "../../include/utils.h"
 #include <chrono>
@@ -129,9 +130,10 @@ void PlayerSync::Update(float deltaTime) {
         m_stateSyncTimer = 0.0f;
     }
 
-    // Silently keep phantom timer maxed so summons never expire
-    if (m_phantomTimerRefresh >= 5.0f) {
+    // Silently keep phantom timer maxed and summoning enabled (every 2 seconds)
+    if (m_phantomTimerRefresh >= 2.0f) {
         MaxPhantomTimer();
+        EnableSummoning();
         m_phantomTimerRefresh = 0.0f;
     }
 }
@@ -382,4 +384,23 @@ bool PlayerSync::MaxPhantomTimer() {
 
     LOG_DEBUG("MaxPhantomTimer: failed to write AllottedTime");
     return false;
+}
+
+// ============================================================================
+// Enable summoning regardless of hollow state
+// Zeroes the hollowing byte so summon signs are visible and usable.
+// This also restores max HP (hollowing reduces it in DS2).
+// Only runs while seamless mode is active.
+// ============================================================================
+void PlayerSync::EnableSummoning() {
+    if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
+
+    uintptr_t playerData = 0;
+    if (!ReadPlayerDataBase(playerData)) return;
+
+    uint8_t hollowing = 0;
+    if (Memory::Read<uint8_t>(playerData + Offsets::GameManager::Hollowing, &hollowing) && hollowing != 0) {
+        Memory::Write<uint8_t>(playerData + Offsets::GameManager::Hollowing, (uint8_t)0);
+        LOG_DEBUG("EnableSummoning: cleared hollowing (was %u)", hollowing);
+    }
 }
