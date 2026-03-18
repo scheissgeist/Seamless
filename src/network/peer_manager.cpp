@@ -15,6 +15,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #include "../../include/network.h"
+#include "../../include/session.h"
 #include "../../include/sync.h"
 #include "../../include/hooks.h"
 #include "../../include/ui.h"
@@ -205,10 +206,19 @@ void PeerManager::LeaveSession() {
 void PeerManager::Update() {
     if (!m_initialized || !m_connected) return;
 
-    std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
+    // Don't hold the lock across the entire update — each sub-function
+    // acquires it as needed. Holding it here caused deadlocks because
+    // HandleIncomingPackets → HandleHandshakePacket → PacketHandler →
+    // SessionManager::AddPlayer takes m_playersMutex, while
+    // SessionManager::LeaveSession → PeerManager::LeaveSession takes
+    // m_peersMutex in the opposite order.
     HandleIncomingPackets();
-    SendHeartbeats();
-    CheckTimeouts();
+
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
+        SendHeartbeats();
+        CheckTimeouts();
+    }
 
     // Client-side: check for handshake timeout (10 seconds)
     if (!m_isHost && !m_handshakeConfirmed && m_connectingTimestampMs > 0) {
@@ -266,15 +276,26 @@ void PeerManager::BroadcastPacket(const PacketHeader* packet) {
 
 void PeerManager::HandleIncomingPackets() {
     SOCKET sock = reinterpret_cast<SOCKET>(m_socket);
-    char buffer[8192];
-    sockaddr_in senderAddr{};
-    int senderAddrLen = sizeof(senderAddr);
 
+    // Receive all pending packets into a local buffer first,
+    // then process them. This avoids holding m_peersMutex while
+    // calling into SessionManager (which takes m_playersMutex),
+    // preventing cross-mutex deadlocks.
+    struct ReceivedPacket {
+        char data[8192];
+        int size;
+        sockaddr_in sender;
+    };
+    std::vector<ReceivedPacket> packets;
+
+    // Drain the socket (no lock needed — socket is only read here)
     while (true) {
-        int received = recvfrom(sock, buffer, sizeof(buffer), 0,
-                               reinterpret_cast<sockaddr*>(&senderAddr), &senderAddrLen);
+        ReceivedPacket pkt{};
+        int senderLen = sizeof(pkt.sender);
+        pkt.size = recvfrom(sock, pkt.data, sizeof(pkt.data), 0,
+                           reinterpret_cast<sockaddr*>(&pkt.sender), &senderLen);
 
-        if (received == SOCKET_ERROR) {
+        if (pkt.size == SOCKET_ERROR) {
             int error = WSAGetLastError();
             if (error != WSAEWOULDBLOCK) {
                 LOG_ERROR("Socket error: %d", error);
@@ -282,19 +303,24 @@ void PeerManager::HandleIncomingPackets() {
             break;
         }
 
-        if (received < static_cast<int>(sizeof(PacketHeader))) continue;
+        if (pkt.size >= static_cast<int>(sizeof(PacketHeader))) {
+            PacketHeader* hdr = reinterpret_cast<PacketHeader*>(pkt.data);
+            if (hdr->magic == PACKET_MAGIC) {
+                packets.push_back(pkt);
+            }
+        }
+    }
 
-        PacketHeader* header = reinterpret_cast<PacketHeader*>(buffer);
-        if (header->magic != PACKET_MAGIC) continue;
+    // Process each packet
+    for (auto& pkt : packets) {
+        PacketHeader* header = reinterpret_cast<PacketHeader*>(pkt.data);
 
-        // Handle handshake specially — it contains the peer identity
-        if (header->type == PacketType::Handshake && received >= static_cast<int>(sizeof(HandshakePacket))) {
-            HandshakePacket* hs = reinterpret_cast<HandshakePacket*>(buffer);
-            HandleHandshakePacket(hs, senderAddr);
+        if (header->type == PacketType::Handshake && pkt.size >= static_cast<int>(sizeof(HandshakePacket))) {
+            HandshakePacket* hs = reinterpret_cast<HandshakePacket*>(pkt.data);
+            HandleHandshakePacket(hs, pkt.sender);
             continue;
         }
 
-        // Handle disconnect/rejection from host (wrong password)
         if (header->type == PacketType::Disconnect && !m_isHost) {
             LOG_WARNING("Received disconnect from host — wrong password or rejected");
             DS2Coop::UI::Overlay::GetInstance().ShowNotification(
@@ -303,30 +329,25 @@ void PeerManager::HandleIncomingPackets() {
             return;
         }
 
-        // For other packets, update the peer's heartbeat
-        for (auto& peer : m_peers) {
-            if (peer.address == senderAddr.sin_addr.s_addr) {
-                peer.lastHeartbeat = NowMs();
-                break;
+        // Update peer heartbeat under lock
+        PeerInfo senderInfo{};
+        {
+            std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
+            for (auto& peer : m_peers) {
+                if (peer.address == pkt.sender.sin_addr.s_addr) {
+                    peer.lastHeartbeat = NowMs();
+                    senderInfo.playerId = peer.playerId;
+                    senderInfo.playerName = peer.playerName;
+                    break;
+                }
             }
         }
-
-        // Build PeerInfo for packet handler
-        PeerInfo senderInfo{};
-        senderInfo.address = senderAddr.sin_addr.s_addr;
-        senderInfo.port = ntohs(senderAddr.sin_port);
+        senderInfo.address = pkt.sender.sin_addr.s_addr;
+        senderInfo.port = ntohs(pkt.sender.sin_port);
         senderInfo.lastHeartbeat = NowMs();
         senderInfo.connected = true;
 
-        // Find player ID
-        for (const auto& peer : m_peers) {
-            if (peer.address == senderAddr.sin_addr.s_addr) {
-                senderInfo.playerId = peer.playerId;
-                senderInfo.playerName = peer.playerName;
-                break;
-            }
-        }
-
+        // Process outside lock — PacketHandler may call into SessionManager
         PacketHandler::GetInstance().HandlePacket(header, senderInfo);
     }
 }
@@ -473,10 +494,19 @@ void PeerManager::SendHeartbeats() {
 void PeerManager::CheckTimeouts() {
     uint64_t now = NowMs();
 
-    for (auto& peer : m_peers) {
-        if (peer.connected && (now - peer.lastHeartbeat > TIMEOUT_DURATION_MS)) {
-            LOG_WARNING("Peer %s (ID: %llu) timed out", peer.playerName.c_str(), peer.playerId);
-            peer.connected = false;
+    auto it = m_peers.begin();
+    while (it != m_peers.end()) {
+        if (it->connected && (now - it->lastHeartbeat > TIMEOUT_DURATION_MS)) {
+            LOG_WARNING("Peer %s (ID: %llu) timed out", it->playerName.c_str(), it->playerId);
+
+            // Notify session manager so the player is removed from the list
+            uint64_t id = it->playerId;
+            it = m_peers.erase(it);
+
+            // Remove from session (outside peer loop is fine — we already erased)
+            DS2Coop::Session::SessionManager::GetInstance().RemovePlayer(id);
+        } else {
+            ++it;
         }
     }
 }

@@ -64,16 +64,14 @@ static std::atomic<bool> g_publicIPFetched{false};
 static std::atomic<bool> g_publicIPFetching{false};
 
 static void FetchPublicIPThread() {
-    // Use raw Winsock to hit a simple IP echo service
-    WSADATA wsa;
-    if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return;
+    // Winsock is already initialized by PeerManager — don't call WSAStartup/Cleanup
+    // here or we risk decrementing the global refcount and killing active sockets.
 
     struct addrinfo hints{}, *result = nullptr;
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
     if (getaddrinfo("api.ipify.org", "80", &hints, &result) != 0) {
-        WSACleanup();
         g_publicIPFetched = true;
         return;
     }
@@ -81,7 +79,6 @@ static void FetchPublicIPThread() {
     SOCKET sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (sock == INVALID_SOCKET) {
         freeaddrinfo(result);
-        WSACleanup();
         g_publicIPFetched = true;
         return;
     }
@@ -89,7 +86,6 @@ static void FetchPublicIPThread() {
     if (connect(sock, result->ai_addr, (int)result->ai_addrlen) != 0) {
         closesocket(sock);
         freeaddrinfo(result);
-        WSACleanup();
         g_publicIPFetched = true;
         return;
     }
@@ -107,7 +103,6 @@ static void FetchPublicIPThread() {
     }
     buf[total] = '\0';
     closesocket(sock);
-    WSACleanup(); // balance the WSAStartup at the top of this function
 
     // Parse IP from HTTP response body (last line after \r\n\r\n)
     char* body = strstr(buf, "\r\n\r\n");

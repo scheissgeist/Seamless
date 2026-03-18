@@ -175,8 +175,10 @@ void SessionManager::LeaveSession() {
     peerMgr.LeaveSession();
 
     // Clear players
-    m_players.clear();
-    // m_playerMap removed — using linear search now
+    {
+        std::lock_guard<std::mutex> lock(m_playersMutex);
+        m_players.clear();
+    }
 
     TransitionToState(SessionState::Disconnected);
 

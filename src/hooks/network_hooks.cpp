@@ -185,20 +185,40 @@ static std::vector<uintptr_t> SearchAsciiString(const char* needle) {
     return results;
 }
 
+// Build a byte-swapped copy of a wide string for searching
+static std::vector<wchar_t> MakeSwappedWideString(const wchar_t* src) {
+    size_t len = wcslen(src);
+    std::vector<wchar_t> swapped(len + 1);
+    for (size_t i = 0; i <= len; i++) {
+        wchar_t c = src[i];
+        char* p = reinterpret_cast<char*>(&c);
+        std::swap(p[0], p[1]);
+        swapped[i] = c;
+    }
+    return swapped;
+}
+
 bool ServerRedirect::PatchHostname(const std::string& newHostname) {
     LOG_INFO("[REDIRECT] Patching server hostname to: %s", newHostname.c_str());
 
-    // DS2 stores the hostname as a wide string in memory
-    // The original is: L"frpg2-steam64-ope-login.fromsoftware-game.net"
     const wchar_t* originalHostname = DS2_SERVER_HOSTNAME;
 
-    // Wait for SteamStub DRM to unpack — the hostname may not be in readable
-    // memory immediately at DLL load time
+    // DS2 may store the hostname in normal byte order OR byte-swapped.
+    // ds3os flips endian, so we search for both.
+    auto swappedHostname = MakeSwappedWideString(originalHostname);
+
     int attempts = 0;
     const int maxAttempts = 60; // 30 seconds max wait
 
     while (attempts < maxAttempts) {
+        // Search for normal byte order first
         auto matches = SearchWideString(originalHostname);
+        // Also search for byte-swapped version
+        auto swappedMatches = SearchWideString(swappedHostname.data());
+        // Merge both result sets
+        for (auto addr : swappedMatches) {
+            matches.push_back(addr);
+        }
 
         bool patched = false;
         for (uintptr_t addr : matches) {
