@@ -150,7 +150,7 @@ bool PeerManager::JoinSession(const std::string& address, uint16_t port, const s
 
     // Register host as a peer
     {
-        std::lock_guard<std::mutex> lock(m_peersMutex);
+        std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
         PeerInfo hostPeer{};
         hostPeer.playerId = 0; // Will be set when host responds
         hostPeer.playerName = "Host";
@@ -186,7 +186,7 @@ void PeerManager::LeaveSession() {
     BroadcastPacket(&disconnectPacket);
 
     {
-        std::lock_guard<std::mutex> lock(m_peersMutex);
+        std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
         m_peers.clear();
     }
     m_connected = false;
@@ -199,7 +199,7 @@ void PeerManager::LeaveSession() {
 void PeerManager::Update() {
     if (!m_initialized || !m_connected) return;
 
-    std::lock_guard<std::mutex> lock(m_peersMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
     HandleIncomingPackets();
     SendHeartbeats();
     CheckTimeouts();
@@ -219,7 +219,7 @@ void PeerManager::Update() {
 bool PeerManager::SendPacket(const PacketHeader* packet, uint64_t targetPlayerId) {
     if (!m_initialized || !m_connected || !packet) return false;
 
-    std::lock_guard<std::mutex> lock(m_peersMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
     SOCKET sock = reinterpret_cast<SOCKET>(m_socket);
 
     for (const auto& peer : m_peers) {
@@ -242,7 +242,7 @@ bool PeerManager::SendPacket(const PacketHeader* packet, uint64_t targetPlayerId
 void PeerManager::BroadcastPacket(const PacketHeader* packet) {
     if (!m_initialized || !m_connected || !packet) return;
 
-    std::lock_guard<std::mutex> lock(m_peersMutex);
+    std::lock_guard<std::recursive_mutex> lock(m_peersMutex);
     SOCKET sock = reinterpret_cast<SOCKET>(m_socket);
 
     for (const auto& peer : m_peers) {
