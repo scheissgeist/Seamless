@@ -462,7 +462,20 @@ bool PlayerSync::MaxPhantomTimer() {
 // Only runs while seamless mode is active.
 // ============================================================================
 void PlayerSync::EnableSummoning() {
-    // Disabled for now — needs verified hollowing offset
+    if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
+
+    uintptr_t playerData = 0;
+    if (!ReadPlayerDataBase(playerData)) return;
+
+    // Clear hollowing so summon signs are visible while hollow
+    __try {
+        uint8_t hollowing = 0;
+        if (Memory::Read<uint8_t>(playerData + Offsets::GameManager::Hollowing, &hollowing) && hollowing != 0) {
+            Memory::Write<uint8_t>(playerData + Offsets::GameManager::Hollowing, (uint8_t)0);
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        // Hollowing offset might be wrong for this game version — silently skip
+    }
 }
 
 std::string PlayerSync::GetLocalCharacterName() {

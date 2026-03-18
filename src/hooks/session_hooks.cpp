@@ -104,12 +104,14 @@ static const char* GetRttiClassName(void* obj) {
 static bool IsDisconnectMessage(const char* className) {
     if (!className) return false;
 
-    // These are the protobuf class names that trigger session disconnection.
-    // We block them to keep the session alive.
-    // The class names come from the DS2_Frpg2RequestMessage protobuf definitions.
-    if (strstr(className, "NotifyDisconnectSession")) return true;
-    if (strstr(className, "NotifyLeaveSession")) return true;
-    if (strstr(className, "NotifyLeaveGuestPlayer")) return true;
+    // Block ALL messages that could end a co-op session.
+    // Matching substrings so both "Request" and "Notify" variants are caught.
+    if (strstr(className, "DisconnectSession")) return true;
+    if (strstr(className, "LeaveSession")) return true;
+    if (strstr(className, "LeaveGuestPlayer")) return true;
+    if (strstr(className, "BanishPlayer")) return true;
+    if (strstr(className, "ReturnToOwnWorld")) return true;
+    if (strstr(className, "RemovePlayer")) return true;
 
     return false;
 }
@@ -154,10 +156,13 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
         }
     }
 
-    // Log interesting messages for debugging
+    // Log ALL session-related messages so we can see what the game sends
     if (strstr(className, "Session") || strstr(className, "Sign") ||
-        strstr(className, "Guest") || strstr(className, "BreakIn")) {
-        LOG_DEBUG("[PROTOBUF >>] %s", className);
+        strstr(className, "Guest") || strstr(className, "BreakIn") ||
+        strstr(className, "Leave") || strstr(className, "Return") ||
+        strstr(className, "Banish") || strstr(className, "Remove") ||
+        strstr(className, "Phantom") || strstr(className, "Summon")) {
+        LOG_INFO("[PROTOBUF >>] %s", className);
     }
 
     // Call original for all non-blocked messages
