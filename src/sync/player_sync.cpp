@@ -163,9 +163,10 @@ void PlayerSync::Update(float deltaTime) {
             m_stateSyncTimer = 0.0f;
         }
 
-        // Silently keep phantom timer maxed (every 5 seconds)
+        // Silently keep phantom timer maxed and phantom type normal (every 5 seconds)
         if (m_phantomTimerRefresh >= 5.0f) {
             MaxPhantomTimer();
+            EnableSummoning();
             m_phantomTimerRefresh = 0.0f;
         }
     }
@@ -463,8 +464,44 @@ bool PlayerSync::MaxPhantomTimer() {
 // Only runs while seamless mode is active.
 // ============================================================================
 void PlayerSync::EnableSummoning() {
-    // Hollowing offset (0x1AC) not verified — disabled to prevent crashes.
-    // Players can use Human Effigy to restore humanity manually.
+    if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
+
+    uintptr_t playerData = 0;
+    if (!ReadPlayerDataBase(playerData)) return;
+
+    // Set TeamType to 0 (Host/Normal) — this makes phantoms:
+    // - Appear solid (not ghostly white)
+    // - Able to rest at bonfires
+    // - Able to talk to NPCs
+    // - Able to pick up items
+    // - Able to open doors and use levers
+    __try {
+        uint8_t teamType = 0xFF;
+        if (Memory::Read<uint8_t>(playerData + Offsets::GameManager::TeamType, &teamType)) {
+            if (teamType != 0x00) {
+                Memory::Write<uint8_t>(playerData + Offsets::GameManager::TeamType, (uint8_t)0x00);
+                LOG_INFO("EnableSummoning: set TeamType to Host (was 0x%02X)", teamType);
+            }
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+
+    // Also set PhantomType to 0 (no phantom visual effect) via NetSession
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    uintptr_t netSession = resolver.GetNetSessionManager();
+    if (!netSession) return;
+
+    __try {
+        uintptr_t sessionPtr = 0;
+        if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::SessionPointer, &sessionPtr) && sessionPtr) {
+            uint32_t phantomType = 0xFF;
+            if (Memory::Read<uint32_t>(sessionPtr + Offsets::NetSession::PhantomType, &phantomType)) {
+                if (phantomType != 0) {
+                    Memory::Write<uint32_t>(sessionPtr + Offsets::NetSession::PhantomType, (uint32_t)0);
+                    LOG_INFO("EnableSummoning: set PhantomType to Normal (was %u)", phantomType);
+                }
+            }
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
 
 std::string PlayerSync::GetLocalCharacterName() {

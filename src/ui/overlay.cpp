@@ -251,20 +251,11 @@ void Overlay::RenderMainMenu() {
     }
 
     if (inSession) {
-        // Status section
-        ImGui::TextDisabled("Status");
-        ImGui::Separator();
-
         auto players = sessionMgr.GetPlayers();
-        uint32_t blocked = DS2Coop::Hooks::ProtobufHooks::GetBlockedMessageCount();
 
-        ImGui::Text("Role: %s", sessionMgr.IsHost() ? "HOST" : "CLIENT");
-        ImGui::Text("Players: %zu", players.size());
-        ImGui::Text("Disconnects blocked: %u", blocked);
-
-        ImGui::Spacing();
-        ImGui::TextDisabled("Players");
+        ImGui::TextDisabled("Session Active");
         ImGui::Separator();
+        ImGui::Text("Players: %zu", players.size());
 
         for (const auto& p : players) {
             bool isLocal = (p.playerId == 0 ||
@@ -272,10 +263,6 @@ void Overlay::RenderMainMenu() {
             ImGui::Text("  %s%s",
                         p.playerName.c_str(),
                         isLocal ? "  (you)" : "");
-            if (p.maxHealth > 0) {
-                ImGui::SameLine();
-                ImGui::TextDisabled("  HP %d/%d", p.health, p.maxHealth);
-            }
         }
 
         ImGui::Spacing();
