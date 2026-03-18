@@ -21,11 +21,11 @@ void PacketHandler::HandlePacket(const PacketHeader* packet, const PeerInfo& sen
 
     switch (packet->type) {
         case PacketType::Handshake:
-            HandleHandshake(reinterpret_cast<const HandshakePacket*>(packet), sender);
+            if (packet->size >= sizeof(HandshakePacket))
+                HandleHandshake(reinterpret_cast<const HandshakePacket*>(packet), sender);
             break;
 
         case PacketType::Heartbeat:
-            // Heartbeat updates are handled in PeerManager::HandleIncomingPackets
             break;
 
         case PacketType::Disconnect:
@@ -37,11 +37,13 @@ void PacketHandler::HandlePacket(const PacketHeader* packet, const PeerInfo& sen
             break;
 
         case PacketType::PlayerPosition:
-            HandlePlayerPosition(reinterpret_cast<const PlayerPositionPacket*>(packet));
+            if (packet->size >= sizeof(PlayerPositionPacket))
+                HandlePlayerPosition(reinterpret_cast<const PlayerPositionPacket*>(packet));
             break;
 
         case PacketType::PlayerState:
-            HandlePlayerState(reinterpret_cast<const PlayerStatePacket*>(packet));
+            if (packet->size >= sizeof(PlayerStatePacket))
+                HandlePlayerState(reinterpret_cast<const PlayerStatePacket*>(packet));
             break;
 
         case PacketType::PlayerDeath:
@@ -61,11 +63,13 @@ void PacketHandler::HandlePacket(const PacketHeader* packet, const PeerInfo& sen
             break;
 
         case PacketType::BossDefeated:
-            HandleBossDefeated(reinterpret_cast<const BossDefeatedPacket*>(packet));
+            if (packet->size >= sizeof(BossDefeatedPacket))
+                HandleBossDefeated(reinterpret_cast<const BossDefeatedPacket*>(packet));
             break;
 
         case PacketType::EventFlag:
-            HandleEventFlag(reinterpret_cast<const EventFlagPacket*>(packet));
+            if (packet->size >= sizeof(EventFlagPacket))
+                HandleEventFlag(reinterpret_cast<const EventFlagPacket*>(packet));
             break;
 
         case PacketType::BonfireRest:
@@ -99,9 +103,10 @@ static std::unordered_map<uint64_t, uint32_t> g_lastPosSequence;
 void PacketHandler::HandlePlayerPosition(const PlayerPositionPacket* packet) {
     if (!packet) return;
 
-    // Drop out-of-order packets
+    // Drop out-of-order packets (handles uint32 wrap-around)
     uint32_t& lastSeq = g_lastPosSequence[packet->playerId];
-    if (packet->header.sequence < lastSeq && lastSeq - packet->header.sequence < 1000) {
+    int32_t seqDiff = static_cast<int32_t>(packet->header.sequence - lastSeq);
+    if (seqDiff < 0 && seqDiff > -1000) {
         return; // old packet, discard
     }
     lastSeq = packet->header.sequence;

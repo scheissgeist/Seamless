@@ -56,17 +56,22 @@ uintptr_t PatternScanner::FindPattern(const char* pattern, const char* mask, con
     Logger::GetInstance().LogInfo("Scanning for pattern in module (base: 0x%p, size: 0x%zX)", 
                                    reinterpret_cast<void*>(base), size);
     
+    if (mask_length >= size) {
+        Logger::GetInstance().LogError("Pattern longer than module — cannot scan");
+        return 0;
+    }
+
     for (size_t i = 0; i < size - mask_length; ++i) {
         const auto* current = reinterpret_cast<const uint8_t*>(base + i);
-        
+
         if (ComparePattern(current, pattern, mask)) {
             uintptr_t result = base + i;
-            Logger::GetInstance().LogInfo("Pattern found at: 0x%p (offset: 0x%zX)", 
+            Logger::GetInstance().LogInfo("Pattern found at: 0x%p (offset: 0x%zX)",
                                            reinterpret_cast<void*>(result), i);
             return result;
         }
     }
-    
+
     Logger::GetInstance().LogError("Pattern not found!");
     return 0;
 }
@@ -85,9 +90,11 @@ std::vector<uintptr_t> PatternScanner::FindPatternAll(const char* pattern, const
     const auto mask_length = strlen(mask);
     const auto* scan_bytes = reinterpret_cast<const uint8_t*>(pattern);
     
+    if (mask_length >= size) return results;
+
     for (size_t i = 0; i < size - mask_length; ++i) {
         const auto* current = reinterpret_cast<const uint8_t*>(base + i);
-        
+
         if (ComparePattern(current, pattern, mask)) {
             results.push_back(base + i);
         }
@@ -98,11 +105,17 @@ std::vector<uintptr_t> PatternScanner::FindPatternAll(const char* pattern, const
 }
 
 uintptr_t PatternScanner::ResolveRIP(uintptr_t instruction_addr, int offset, int instruction_size) {
-    // Read the RIP-relative offset (4 bytes)
-    int32_t rip_offset = *reinterpret_cast<int32_t*>(instruction_addr + offset);
-    
-    // Calculate absolute address:
-    // RIP (after instruction) + offset
+    if (!instruction_addr) return 0;
+
+    int32_t rip_offset = 0;
+    __try {
+        rip_offset = *reinterpret_cast<int32_t*>(instruction_addr + offset);
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+        Logger::GetInstance().LogError("ResolveRIP: failed to read at 0x%p + %d",
+                                       reinterpret_cast<void*>(instruction_addr), offset);
+        return 0;
+    }
+
     uintptr_t rip = instruction_addr + instruction_size;
     uintptr_t absolute_addr = rip + rip_offset;
     

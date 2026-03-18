@@ -150,6 +150,8 @@ static std::vector<uintptr_t> SearchWideString(const wchar_t* needle) {
     size_t needleLen = wcslen(needle);
     size_t needleBytes = needleLen * sizeof(wchar_t);
 
+    if (needleBytes >= moduleSize) return results;
+
     for (size_t i = 0; i < moduleSize - needleBytes; i++) {
         if (memcmp(reinterpret_cast<void*>(base + i), needle, needleBytes) == 0) {
             results.push_back(base + i);
@@ -175,6 +177,8 @@ static std::vector<uintptr_t> SearchAsciiString(const char* needle) {
     uintptr_t base = reinterpret_cast<uintptr_t>(modInfo.lpBaseOfDll);
     size_t moduleSize = modInfo.SizeOfImage;
     size_t needleLen = strlen(needle);
+
+    if (needleLen >= moduleSize) return results;
 
     for (size_t i = 0; i < moduleSize - needleLen; i++) {
         if (memcmp(reinterpret_cast<void*>(base + i), needle, needleLen) == 0) {
