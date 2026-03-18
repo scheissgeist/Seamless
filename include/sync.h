@@ -86,6 +86,7 @@ private:
     bool m_initialized = false;
     float m_positionSyncTimer = 0.0f;
     float m_stateSyncTimer = 0.0f;
+    float m_phantomTimerRefresh = 0.0f;
     
     static constexpr float POSITION_SYNC_INTERVAL = 0.05f; // 20 times per second
     static constexpr float STATE_SYNC_INTERVAL = 0.5f;     // 2 times per second

@@ -290,14 +290,6 @@ void Overlay::RenderMainMenu() {
             }
         }
 
-        if (ImGui::Button("Max Phantom Timer", ImVec2(-1, 0))) {
-            if (DS2Coop::Sync::PlayerSync::GetInstance().MaxPhantomTimer()) {
-                ShowNotification("Phantom timer maxed! Summon won't expire.", 4.0f);
-            } else {
-                ShowNotification("No active phantom session to extend.", 4.0f);
-            }
-        }
-
         ImGui::Spacing();
         ImGui::Separator();
         ImGui::Spacing();

@@ -115,6 +115,7 @@ void PlayerSync::Update(float deltaTime) {
 
     m_positionSyncTimer += deltaTime;
     m_stateSyncTimer += deltaTime;
+    m_phantomTimerRefresh += deltaTime;
 
     if (m_positionSyncTimer >= POSITION_SYNC_INTERVAL) {
         SyncLocalPlayerPosition();
@@ -124,6 +125,12 @@ void PlayerSync::Update(float deltaTime) {
     if (m_stateSyncTimer >= STATE_SYNC_INTERVAL) {
         SyncLocalPlayerState();
         m_stateSyncTimer = 0.0f;
+    }
+
+    // Silently keep phantom timer maxed so summons never expire
+    if (m_phantomTimerRefresh >= 5.0f) {
+        MaxPhantomTimer();
+        m_phantomTimerRefresh = 0.0f;
     }
 }
 
@@ -330,10 +337,10 @@ bool PlayerSync::MaxPhantomTimer() {
     // Set AllottedTime to a huge value (float, in seconds)
     float maxTime = 99999.0f;
     if (Memory::Write<float>(sessionPtr + Offsets::NetSession::AllottedTime, maxTime)) {
-        LOG_INFO("MaxPhantomTimer: AllottedTime set to %.0f", maxTime);
+        LOG_DEBUG("MaxPhantomTimer: AllottedTime set to %.0f", maxTime);
         return true;
     }
 
-    LOG_ERROR("MaxPhantomTimer: failed to write AllottedTime");
+    LOG_DEBUG("MaxPhantomTimer: failed to write AllottedTime");
     return false;
 }
