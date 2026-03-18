@@ -46,12 +46,10 @@ target_compile_options(ds2_seamless_coop PRIVATE
     $<$<CONFIG:Debug>:/MTd>
 )
 
-# Copy to game directory if specified
-if(DEFINED DS2_GAME_DIR)
-    add_custom_command(TARGET ds2_seamless_coop POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy
-        $<TARGET_FILE:ds2_seamless_coop>
-        ${DS2_GAME_DIR}/ds2_seamless_coop.dll
-    )
-endif()
+# Also build as dinput8.dll (drop-in auto-load, no launcher needed)
+add_custom_command(TARGET ds2_seamless_coop POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+    $<TARGET_FILE:ds2_seamless_coop>
+    ${CMAKE_BINARY_DIR}/bin/$<CONFIG>/dinput8.dll
+)
 

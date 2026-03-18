@@ -5,13 +5,14 @@ Play through Dark Souls 2: Scholar of the First Sin with friends
 without getting disconnected at boss fights or deaths.
 
 
-HOW TO USE
-----------
+HOW TO INSTALL (recommended — automatic)
+-----------------------------------------
 
-1. Launch Dark Souls 2 normally through Steam
+1. Copy dinput8.dll and ds2_seamless_coop.ini into your game folder:
+   C:\...\Dark Souls II Scholar of the First Sin\Game\
 
-2. Run PlayDS2WithMod.exe (as Administrator)
-   - It will find the running game and inject the mod
+2. Launch Dark Souls 2 normally through Steam
+   The mod loads automatically — no launcher needed.
 
 3. Press INSERT in-game to open the co-op menu
 
@@ -20,6 +21,17 @@ HOW TO USE
    - Click "Copy" to copy your IP, then send it to your friend
 
 5. JOIN: Click "Join Session", enter host's IP and password, click "Connect"
+
+To uninstall: delete dinput8.dll from the game folder.
+
+
+ALTERNATIVE (manual injection)
+------------------------------
+
+If you prefer not to put files in your game folder:
+1. Launch Dark Souls 2 through Steam
+2. Run PlayDS2WithMod.exe as Administrator
+3. Press INSERT in-game
 
 
 CONNECTING TO FRIENDS
@@ -52,8 +64,9 @@ WHAT THIS MOD DOES
 FILES
 -----
 
-PlayDS2WithMod.exe     - Launcher (injects the mod into the game)
-ds2_seamless_coop.dll  - The mod itself
+dinput8.dll            - Drop in game folder for auto-load (recommended)
+PlayDS2WithMod.exe     - Alternative: manual launcher (run as admin)
+ds2_seamless_coop.dll  - Same mod, different name (for manual injection)
 ds2_seamless_coop.ini  - Configuration (defaults are fine)
 ds2_seamless_coop.log  - Created in game folder after first run
 

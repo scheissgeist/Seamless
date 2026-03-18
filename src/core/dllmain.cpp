@@ -1,3 +1,10 @@
+// DLL entry point + dinput8.dll proxy
+//
+// When this DLL is named "dinput8.dll" and placed in the game folder,
+// the game loads it automatically (Windows DLL search order).
+// We forward all real DirectInput calls to the system dinput8.dll
+// so controller/keyboard input keeps working.
+
 #include <Windows.h>
 #include "../include/mod.h"
 #include "../include/utils.h"
@@ -5,6 +12,42 @@
 using namespace DS2Coop;
 using namespace DS2Coop::Utils;
 
+// ============================================================================
+// dinput8.dll proxy — forward DirectInput8Create to the real system DLL
+// ============================================================================
+static HMODULE g_realDinput8 = nullptr;
+
+typedef HRESULT(WINAPI* DirectInput8Create_t)(
+    HINSTANCE, DWORD, REFIID, LPVOID*, LPUNKNOWN);
+static DirectInput8Create_t g_realDirectInput8Create = nullptr;
+
+extern "C" __declspec(dllexport) HRESULT WINAPI DirectInput8Create(
+    HINSTANCE hinst, DWORD dwVersion, REFIID riidltf,
+    LPVOID* ppvOut, LPUNKNOWN punkOuter)
+{
+    if (!g_realDinput8) {
+        // Load the real dinput8.dll from system32
+        wchar_t sysDir[MAX_PATH];
+        GetSystemDirectoryW(sysDir, MAX_PATH);
+        wcscat_s(sysDir, L"\\dinput8.dll");
+        g_realDinput8 = LoadLibraryW(sysDir);
+    }
+
+    if (!g_realDirectInput8Create && g_realDinput8) {
+        g_realDirectInput8Create = reinterpret_cast<DirectInput8Create_t>(
+            GetProcAddress(g_realDinput8, "DirectInput8Create"));
+    }
+
+    if (g_realDirectInput8Create) {
+        return g_realDirectInput8Create(hinst, dwVersion, riidltf, ppvOut, punkOuter);
+    }
+
+    return E_FAIL;
+}
+
+// ============================================================================
+// DllMain
+// ============================================================================
 BOOL APIENTRY DllMain(HMODULE hModule, DWORD ul_reason_for_call, LPVOID lpReserved) {
     switch (ul_reason_for_call) {
     case DLL_PROCESS_ATTACH: {
