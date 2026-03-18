@@ -101,27 +101,27 @@ static const char* GetRttiClassName(void* obj) {
 // ============================================================================
 // Check if a message class name corresponds to a disconnect/leave message
 // ============================================================================
-static bool IsDisconnectMessage(const char* className) {
+// Messages to block when SENDING (outgoing — serialize hook)
+// Only block the server notification that the session is ending.
+// Do NOT block voluntary leaves (homeward bone, aged feather) or the game crashes.
+static bool IsOutgoingDisconnect(const char* className) {
     if (!className) return false;
+    if (strstr(className, "NotifyDisconnectSession")) return true;
+    if (strstr(className, "NotifyLeaveGuestPlayer")) return true;
+    return false;
+}
 
-    // Block ALL messages that could end or disrupt a co-op session.
-    // Uses substring matching so both "Request" and "Notify" prefixes are caught.
-    //
-    // Core disconnect messages:
-    if (strstr(className, "DisconnectSession")) return true;   // host/area disconnect
-    if (strstr(className, "LeaveSession")) return true;        // boss kill, death, timer
-    if (strstr(className, "LeaveGuestPlayer")) return true;    // phantom removal
-    if (strstr(className, "BanishPlayer")) return true;        // black crystal
-    if (strstr(className, "ReturnToOwnWorld")) return true;    // phantom sent home
-    if (strstr(className, "RemovePlayer")) return true;        // generic removal
-    // Fog gate / area transition:
-    if (strstr(className, "VisitFogGate")) return true;        // fog wall phantom block
-    if (strstr(className, "LeaveByFogGate")) return true;      // leave via fog
-    // Bonfire rest:
-    if (strstr(className, "RestAtBonfire")) return true;       // phantom kick on rest
-    // Invasion disruption:
-    if (strstr(className, "BreakInTarget")) return true;       // invasion displaces co-op
-
+// Messages to block when RECEIVING (incoming — parse hook)
+// Block everything the server sends that would end our session.
+static bool IsIncomingDisconnect(const char* className) {
+    if (!className) return false;
+    if (strstr(className, "DisconnectSession")) return true;
+    if (strstr(className, "LeaveSession")) return true;
+    if (strstr(className, "LeaveGuestPlayer")) return true;
+    if (strstr(className, "BanishPlayer")) return true;
+    if (strstr(className, "ReturnToOwnWorld")) return true;
+    if (strstr(className, "RemovePlayer")) return true;
+    if (strstr(className, "BreakInTarget")) return true;
     return false;
 }
 
@@ -148,7 +148,7 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
 
     // If seamless mode is active, block disconnect messages
     if (g_seamlessActive.load()) {
-        if (IsDisconnectMessage(className)) {
+        if (IsOutgoingDisconnect(className)) {
             g_blockedCount++;
             LOG_INFO("[SEAMLESS] BLOCKED outgoing message: %s (total blocked: %u)",
                      className, g_blockedCount.load());
@@ -199,7 +199,7 @@ static bool __fastcall ParseHook(void* thisPtr, void* data, int size) {
 
         // If we receive a disconnect push from the server while seamless is active,
         // return false so the game thinks the parse failed and ignores it.
-        if (g_seamlessActive.load() && IsDisconnectMessage(className)) {
+        if (g_seamlessActive.load() && IsIncomingDisconnect(className)) {
             LOG_INFO("[SEAMLESS] BLOCKED incoming disconnect from server: %s", className);
             g_blockedCount++;
             return false;
