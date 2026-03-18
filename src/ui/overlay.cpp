@@ -344,32 +344,46 @@ void Overlay::RenderHostMenu() {
     if (cachedLocalIP.empty()) cachedLocalIP = GetLocalIP();
     EnsurePublicIPFetched();
 
-    ImGui::TextDisabled("Your IP address (share with friends):");
+    // IP addresses hidden by default (streamer safety)
+    static bool showIPs = false;
 
-    // Public IP (for internet play)
-    if (g_publicIPFetched && !g_publicIP.empty()) {
+    if (!showIPs) {
+        if (ImGui::Button("Show IP Addresses", ImVec2(-1, 0))) {
+            showIPs = true;
+        }
+        ImGui::TextDisabled("IPs hidden (click to reveal)");
+    } else {
+        if (ImGui::Button("Hide IP Addresses", ImVec2(-1, 0))) {
+            showIPs = false;
+        }
+
+        ImGui::TextDisabled("Share with friends:");
+
+        // Public IP
+        if (g_publicIPFetched && !g_publicIP.empty()) {
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.7f, 0.2f, 1.0f));
+            ImGui::Text("  Public:  %s : 27015", g_publicIP.c_str());
+            ImGui::PopStyleColor();
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Copy##pub")) {
+                CopyToClipboard(g_publicIP);
+                ShowNotification("Public IP copied!", 2.0f);
+            }
+        } else if (g_publicIPFetched) {
+            ImGui::TextDisabled("  Public:  (could not detect)");
+        } else {
+            ImGui::TextDisabled("  Public:  fetching...");
+        }
+
+        // LAN / Hamachi IP
         ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.7f, 0.2f, 1.0f));
-        ImGui::Text("  Public:  %s : 27015", g_publicIP.c_str());
+        ImGui::Text("  LAN:     %s : 27015", cachedLocalIP.c_str());
         ImGui::PopStyleColor();
         ImGui::SameLine();
-        if (ImGui::SmallButton("Copy##pub")) {
-            CopyToClipboard(g_publicIP);
-            ShowNotification("Public IP copied!", 2.0f);
+        if (ImGui::SmallButton("Copy##lan")) {
+            CopyToClipboard(cachedLocalIP);
+            ShowNotification("LAN IP copied!", 2.0f);
         }
-    } else if (g_publicIPFetched) {
-        ImGui::TextDisabled("  Public:  (could not detect)");
-    } else {
-        ImGui::TextDisabled("  Public:  fetching...");
-    }
-
-    // LAN / Hamachi IP
-    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.8f, 0.7f, 0.2f, 1.0f));
-    ImGui::Text("  LAN:     %s : 27015", cachedLocalIP.c_str());
-    ImGui::PopStyleColor();
-    ImGui::SameLine();
-    if (ImGui::SmallButton("Copy##lan")) {
-        CopyToClipboard(cachedLocalIP);
-        ShowNotification("LAN IP copied!", 2.0f);
     }
 
     ImGui::Spacing();
