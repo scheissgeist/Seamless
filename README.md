@@ -1,40 +1,52 @@
 # Dark Souls 2: Seamless Co-op
 
-Seamless co-op mod for Dark Souls 2: Scholar of the First Sin. Play through the entire game with friends without getting disconnected at boss fights, deaths, or area transitions.
+Play through Dark Souls 2: Scholar of the First Sin with friends. No more getting disconnected at boss fights or deaths. No more re-summoning after every encounter.
 
-## Download
+## Install
 
-Grab the latest release from the [Releases page](https://github.com/scheissgeist/Seamless/releases). No build tools required.
+1. **[Download the latest release](https://github.com/scheissgeist/Seamless/releases/latest)**
+2. Extract the zip
+3. Copy `dinput8.dll` and `ds2_seamless_coop.ini` into your game folder:
+   ```
+   Steam\steamapps\common\Dark Souls II Scholar of the First Sin\Game\
+   ```
+4. Launch Dark Souls 2 through Steam — the mod loads automatically
 
-## How to use
+To uninstall, delete `dinput8.dll` from the game folder.
 
-1. Launch Dark Souls 2 normally through Steam
-2. Run `PlayDS2WithMod.exe` as Administrator
-3. Press **INSERT** in-game to open the co-op menu
-4. **Host:** Set a password, click Start Hosting, share your IP with friends
-5. **Join:** Enter host's IP and password, click Connect
+## Play
 
-## Connecting to friends
+Press **INSERT** to open the co-op menu.
 
-**Same network (LAN):** Use the LAN IP shown in the host menu.
+**Host a session:** Set a password, click Start Hosting. Your IP is shown on screen with a Copy button.
 
-**Over the internet:**
-- Host forwards UDP port 27015 on their router, friends use the Public IP shown in the menu
-- Or install [Hamachi](https://vpn.net) / [ZeroTier](https://zerotier.com) and use the virtual LAN IP
+**Join a session:** Enter the host's IP and password, click Connect.
 
-## How it works
+## Connect to friends
 
-The mod hooks the game's protobuf serialization layer (the same technique used by [ds3os](https://github.com/TLeonardUK/ds3os)) to intercept and block disconnect messages (`NotifyDisconnectSession`, `NotifyLeaveSession`, `NotifyLeaveGuestPlayer`). When the game tries to end your co-op session after a boss kill or death, the message is silently dropped and the session continues.
+| Setup | What to do |
+|-------|-----------|
+| Same house / LAN | Use the LAN IP from the host menu |
+| Over the internet | Host forwards **UDP port 27015** on their router. Friends use the Public IP from the host menu |
+| Easiest (no port forwarding) | Everyone installs [Hamachi](https://vpn.net) or [ZeroTier](https://zerotier.com), joins the same network, host shares their VPN IP |
 
-Additional systems:
-- DX11 Present hook with ImGui overlay for the in-game menu
-- AOB pattern scanning for game memory addresses
-- UDP P2P networking with password-protected sessions
-- Player position/health sync from game memory
+## What it does
+
+- Blocks disconnect messages so your session survives boss kills, deaths, and area transitions
+- In-game ImGui overlay for hosting and joining (no config file editing, no alt-tabbing)
+- Password-protected sessions
+- Player health and position displayed in the session menu
+- Public and LAN IP shown with copy-to-clipboard buttons
+
+## Compatibility
+
+- Dark Souls 2: Scholar of the First Sin (Steam)
+- Windows 10 / 11
+- Tested on Ver 1.03, Calibrations 2.02
 
 ## Building from source
 
-Requires Visual Studio 2022 with C++ Desktop workload and CMake 3.20+.
+Requires Visual Studio 2022 (C++ Desktop workload) and CMake 3.20+.
 
 ```
 mkdir build && cd build
@@ -42,18 +54,11 @@ cmake ..
 cmake --build . --config Release
 ```
 
-Outputs:
-- `build/bin/Release/ds2_seamless_coop.dll` — the mod
-- `build/bin/Release/PlayDS2WithMod.exe` — the launcher
-
-## Compatibility
-
-Tested on Dark Souls 2: Scholar of the First Sin, Steam version, Ver 1.03 / Calibrations 2.02.
+Output: `build/bin/Release/dinput8.dll` (drop in game folder) and `build/bin/Release/PlayDS2WithMod.exe` (alternative manual injector).
 
 ## Credits
 
-- [ds3os](https://github.com/TLeonardUK/ds3os) by TLeonardUK — protobuf interception technique and network protocol research
-- [Bob Edition Cheat Table](https://github.com/Atvaark/Dark-Souls-2-SotFS-CT-Bob-Edition) — game memory offsets
+- [ds3os](https://github.com/TLeonardUK/ds3os) by TLeonardUK — protobuf interception technique
 - [Dear ImGui](https://github.com/ocornut/imgui) — in-game UI
 - [MinHook](https://github.com/TsudaKagewortu/minhook) — function hooking
 
