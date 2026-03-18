@@ -104,14 +104,23 @@ static const char* GetRttiClassName(void* obj) {
 static bool IsDisconnectMessage(const char* className) {
     if (!className) return false;
 
-    // Block ALL messages that could end a co-op session.
-    // Matching substrings so both "Request" and "Notify" variants are caught.
-    if (strstr(className, "DisconnectSession")) return true;
-    if (strstr(className, "LeaveSession")) return true;
-    if (strstr(className, "LeaveGuestPlayer")) return true;
-    if (strstr(className, "BanishPlayer")) return true;
-    if (strstr(className, "ReturnToOwnWorld")) return true;
-    if (strstr(className, "RemovePlayer")) return true;
+    // Block ALL messages that could end or disrupt a co-op session.
+    // Uses substring matching so both "Request" and "Notify" prefixes are caught.
+    //
+    // Core disconnect messages:
+    if (strstr(className, "DisconnectSession")) return true;   // host/area disconnect
+    if (strstr(className, "LeaveSession")) return true;        // boss kill, death, timer
+    if (strstr(className, "LeaveGuestPlayer")) return true;    // phantom removal
+    if (strstr(className, "BanishPlayer")) return true;        // black crystal
+    if (strstr(className, "ReturnToOwnWorld")) return true;    // phantom sent home
+    if (strstr(className, "RemovePlayer")) return true;        // generic removal
+    // Fog gate / area transition:
+    if (strstr(className, "VisitFogGate")) return true;        // fog wall phantom block
+    if (strstr(className, "LeaveByFogGate")) return true;      // leave via fog
+    // Bonfire rest:
+    if (strstr(className, "RestAtBonfire")) return true;       // phantom kick on rest
+    // Invasion disruption:
+    if (strstr(className, "BreakInTarget")) return true;       // invasion displaces co-op
 
     return false;
 }
