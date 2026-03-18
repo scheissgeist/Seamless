@@ -71,6 +71,36 @@ static bool ReadPlayerDataBase(uintptr_t& outPlayerData) {
     return true;
 }
 
+static bool ReadCharacterNameRaw(uintptr_t playerData, wchar_t* nameBuf, int maxChars) {
+    __try {
+        for (int i = 0; i < maxChars; i++) {
+            wchar_t ch = 0;
+            if (!Memory::Read<wchar_t>(playerData + Offsets::GameManager::CharacterName + i * 2, &ch))
+                break;
+            if (ch == 0) break;
+            nameBuf[i] = ch;
+        }
+        return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
+static std::string ReadCharacterName() {
+    uintptr_t playerData = 0;
+    if (!ReadPlayerDataBase(playerData)) return "";
+
+    wchar_t nameBuf[32] = {};
+    if (!ReadCharacterNameRaw(playerData, nameBuf, 31)) return "";
+    if (nameBuf[0] == 0) return "";
+
+    int len = WideCharToMultiByte(CP_UTF8, 0, nameBuf, -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 0) return "";
+    std::string result(len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, nameBuf, -1, &result[0], len, nullptr, nullptr);
+    return result;
+}
+
 static bool ReadPlayerPosition(float& x, float& y, float& z, float& rotY) {
     uintptr_t playerData = 0;
     if (!ReadPlayerDataBase(playerData)) return false;
@@ -436,5 +466,8 @@ bool PlayerSync::MaxPhantomTimer() {
 // ============================================================================
 void PlayerSync::EnableSummoning() {
     // Disabled for now — needs verified hollowing offset
-    // The offset 0x1AC may be wrong and could crash the game
+}
+
+std::string PlayerSync::GetLocalCharacterName() {
+    return ReadCharacterName();
 }

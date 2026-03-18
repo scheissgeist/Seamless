@@ -15,6 +15,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #include "../../include/network.h"
+#include "../../include/sync.h"
 #include "../../include/ui.h"
 #include "../../include/utils.h"
 #include <chrono>
@@ -132,7 +133,8 @@ bool PeerManager::JoinSession(const std::string& address, uint16_t port, const s
     handshake.header.timestamp = NowMs();
     handshake.version = 1;
     handshake.playerId = m_localPlayerId;
-    strncpy_s(handshake.playerName, "Player", sizeof(handshake.playerName));
+    std::string charName = DS2Coop::Sync::PlayerSync::GetInstance().GetLocalCharacterName();
+    strncpy_s(handshake.playerName, charName.empty() ? "Player" : charName.c_str(), sizeof(handshake.playerName));
     strncpy_s(handshake.password, password.c_str(), sizeof(handshake.password));
 
     // Send to host
@@ -385,7 +387,8 @@ void PeerManager::HandleHandshakePacket(const HandshakePacket* hs, const sockadd
         response.header.timestamp = NowMs();
         response.version = 1;
         response.playerId = m_localPlayerId;
-        strncpy_s(response.playerName, "Host", sizeof(response.playerName));
+        std::string hostName = DS2Coop::Sync::PlayerSync::GetInstance().GetLocalCharacterName();
+        strncpy_s(response.playerName, hostName.empty() ? "Host" : hostName.c_str(), sizeof(response.playerName));
         strncpy_s(response.password, m_sessionPassword.c_str(), sizeof(response.password));
 
         SOCKET sock = reinterpret_cast<SOCKET>(m_socket);

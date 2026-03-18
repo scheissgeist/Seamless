@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -77,6 +78,7 @@ public:
     bool GrantSoapstones();
     bool MaxPhantomTimer();
     void EnableSummoning();
+    std::string GetLocalCharacterName();
 
 private:
     PlayerSync() = default;

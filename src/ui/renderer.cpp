@@ -36,6 +36,7 @@
 #include "imgui_impl_win32.h"
 #include "../../include/ui.h"
 #include "../../include/hooks.h"
+#include "../../include/session.h"
 #include "../../include/utils.h"
 
 using namespace DS2Coop::Utils;
@@ -252,7 +253,7 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
     ImGui_ImplWin32_NewFrame();
     ImGui::NewFrame();
 
-    // Persistent HUD badge — always visible
+    // Persistent HUD badge — always visible, shows player count when in session
     {
         ImGui::SetNextWindowPos(ImVec2(10.0f, 10.0f), ImGuiCond_Always);
         ImGui::SetNextWindowBgAlpha(0.55f);
@@ -262,9 +263,17 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
             ImGuiWindowFlags_NoSavedSettings  | ImGuiWindowFlags_NoBringToFrontOnFocus |
             ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_AlwaysAutoResize;
         ImGui::Begin("##hud", nullptr, hudFlags);
-        ImGui::TextColored(ImVec4(0.80f, 0.65f, 0.20f, 1.0f), "Seamless Co-op");
+
+        auto& sessionMgr = DS2Coop::Session::SessionManager::GetInstance();
+        if (sessionMgr.IsActive()) {
+            auto players = sessionMgr.GetPlayers();
+            ImGui::TextColored(ImVec4(0.80f, 0.65f, 0.20f, 1.0f),
+                "Seamless Co-op  [%zu players]", players.size());
+        } else {
+            ImGui::TextColored(ImVec4(0.80f, 0.65f, 0.20f, 1.0f), "Seamless Co-op");
+        }
         ImGui::SameLine();
-        ImGui::TextDisabled("| INSERT for menu");
+        ImGui::TextDisabled("| INSERT");
         ImGui::End();
     }
 

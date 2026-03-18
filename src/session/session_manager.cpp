@@ -5,6 +5,7 @@
 #include "../../include/session.h"
 #include "../../include/network.h"
 #include "../../include/sync.h"
+#include "../../include/ui.h"
 #include "../../include/utils.h"
 #include <algorithm>
 #include <chrono>
@@ -64,7 +65,6 @@ bool SessionManager::CreateSession(const std::string& password) {
     // Add local player
     SessionPlayer localPlayer{};
     localPlayer.playerId = m_localPlayerId;
-    localPlayer.playerName = "Host";
     localPlayer.isAlive = true;
     localPlayer.isReady = true;
     localPlayer.soulLevel = 0;
@@ -72,14 +72,18 @@ bool SessionManager::CreateSession(const std::string& password) {
     localPlayer.maxHealth = 0;
     localPlayer.x = localPlayer.y = localPlayer.z = 0.0f;
 
+    // Initialize sync systems first so we can read the character name
+    Sync::PlayerSync::GetInstance().Initialize();
+    Sync::ProgressSync::GetInstance().Initialize();
+
+    // Read actual character name from game memory
+    std::string charName = Sync::PlayerSync::GetInstance().GetLocalCharacterName();
+    localPlayer.playerName = charName.empty() ? "Host" : charName;
+
     {
         std::lock_guard<std::mutex> lock(m_playersMutex);
         m_players.push_back(localPlayer);
     }
-
-    // Initialize sync systems
-    Sync::PlayerSync::GetInstance().Initialize();
-    Sync::ProgressSync::GetInstance().Initialize();
 
     TransitionToState(SessionState::Connected);
 
@@ -119,7 +123,6 @@ bool SessionManager::JoinSession(const std::string& address, const std::string& 
     // Add local player
     SessionPlayer localPlayer{};
     localPlayer.playerId = m_localPlayerId;
-    localPlayer.playerName = "Player";
     localPlayer.isAlive = true;
     localPlayer.isReady = true;
     localPlayer.soulLevel = 0;
@@ -127,14 +130,17 @@ bool SessionManager::JoinSession(const std::string& address, const std::string& 
     localPlayer.maxHealth = 0;
     localPlayer.x = localPlayer.y = localPlayer.z = 0.0f;
 
+    // Initialize sync systems first so we can read the character name
+    Sync::PlayerSync::GetInstance().Initialize();
+    Sync::ProgressSync::GetInstance().Initialize();
+
+    std::string charName = Sync::PlayerSync::GetInstance().GetLocalCharacterName();
+    localPlayer.playerName = charName.empty() ? "Player" : charName;
+
     {
         std::lock_guard<std::mutex> lock(m_playersMutex);
         m_players.push_back(localPlayer);
     }
-
-    // Initialize sync systems
-    Sync::PlayerSync::GetInstance().Initialize();
-    Sync::ProgressSync::GetInstance().Initialize();
 
     TransitionToState(SessionState::Connected);
 
@@ -203,6 +209,9 @@ void SessionManager::AddPlayer(uint64_t playerId, const std::string& name) {
 
     LOG_INFO("Player joined session: %s (ID: %llu) [Total: %zu players]",
              name.c_str(), playerId, m_players.size());
+
+    // Show notification
+    UI::Overlay::GetInstance().ShowNotification(name + " joined the session", 4.0f);
 }
 
 void SessionManager::RemovePlayer(uint64_t playerId) {
@@ -221,6 +230,10 @@ void SessionManager::RemovePlayer(uint64_t playerId) {
 
     LOG_INFO("Player left session: %s (ID: %llu) [Total: %zu players]",
              name.c_str(), playerId, m_players.size());
+
+    if (!name.empty()) {
+        UI::Overlay::GetInstance().ShowNotification(name + " left the session", 4.0f);
+    }
 }
 
 SessionPlayer* SessionManager::GetPlayer(uint64_t playerId) {
