@@ -105,29 +105,37 @@ bool SeamlessCoopMod::Initialize() {
 
         // Find the public key file — check next to the DLL, then in server dir
         std::string keyPath = "ds2_server_public.key";
-        std::ifstream testKey(keyPath);
-        if (!testKey.good()) {
-            // Try relative to common locations
-            keyPath = "Saved/default/public.key";
-            testKey.open(keyPath);
-        }
-        if (!testKey.good()) {
-            LOG_WARNING("[4/7] No public key file found — RSA patching will be skipped");
-            LOG_WARNING("[4/7] Place ds2_server_public.key in game folder for server auth");
-            // Still patch hostname even without key — server may work without RSA
-            Hooks::ServerRedirect::PatchHostname(m_config.server_ip);
-        } else {
-            testKey.close();
-            // Run hostname + RSA patching in a background thread
-            // (needs to wait for SteamStub to unpack)
-            std::string ip = m_config.server_ip;
-            std::string kp = keyPath;
-            CreateThread(nullptr, 0, [](LPVOID param) -> DWORD {
-                auto* args = static_cast<std::pair<std::string, std::string>*>(param);
-                Hooks::ServerRedirect::Install(args->first, args->second);
-                delete args;
-                return 0;
-            }, new std::pair<std::string, std::string>(ip, kp), 0, nullptr);
+        {
+            std::ifstream testKey(keyPath);
+            if (!testKey.good()) {
+                testKey.clear();
+                keyPath = "Saved/default/public.key";
+                testKey.open(keyPath);
+            }
+            if (!testKey.good()) {
+                LOG_WARNING("[4/7] No public key file found — RSA patching will be skipped");
+                LOG_WARNING("[4/7] Place ds2_server_public.key in game folder for server auth");
+                // Still patch hostname in background thread (needs SteamStub wait)
+                std::string ip = m_config.server_ip;
+                CreateThread(nullptr, 0, [](LPVOID param) -> DWORD {
+                    auto* ipStr = static_cast<std::string*>(param);
+                    Hooks::ServerRedirect::PatchHostname(*ipStr);
+                    delete ipStr;
+                    return 0;
+                }, new std::string(ip), 0, nullptr);
+            } else {
+                testKey.close();
+                // Run hostname + RSA patching in a background thread
+                // (needs to wait for SteamStub to unpack)
+                std::string ip = m_config.server_ip;
+                std::string kp = keyPath;
+                CreateThread(nullptr, 0, [](LPVOID param) -> DWORD {
+                    auto* args = static_cast<std::pair<std::string, std::string>*>(param);
+                    Hooks::ServerRedirect::Install(args->first, args->second);
+                    delete args;
+                    return 0;
+                }, new std::pair<std::string, std::string>(ip, kp), 0, nullptr);
+            }
         }
     }
 

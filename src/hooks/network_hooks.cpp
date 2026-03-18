@@ -221,18 +221,33 @@ bool ServerRedirect::PatchHostname(const std::string& newHostname) {
             }
 
             // Convert hostname to wide string and write it
-            // ds3os flips endian for each wchar — we follow the same approach
+            // ds3os flips endian because FromSoft stores wchars byte-swapped.
+            // Our SearchWideString uses memcmp against normal wchar_t, so if the
+            // search matched, the memory is in normal byte order — check by reading
+            // the first char to see if it's byte-swapped or not.
             std::wstring wideHostname(newHostname.begin(), newHostname.end());
 
             wchar_t* ptr = reinterpret_cast<wchar_t*>(addr);
+            bool isSwapped = false;
+            {
+                // Check if 'f' (0x0066) is stored as 0x6600 (swapped)
+                uint8_t* raw = reinterpret_cast<uint8_t*>(ptr);
+                if (raw[0] == 0x66 && raw[1] == 0x00) {
+                    isSwapped = false; // Normal LE order
+                } else if (raw[0] == 0x00 && raw[1] == 0x66) {
+                    isSwapped = true;  // Byte-swapped
+                }
+            }
+
             for (size_t i = 0; i < wideHostname.size() + 1; i++) {
                 wchar_t chr = (i < wideHostname.size()) ? wideHostname[i] : L'\0';
 
-                // Flip endian (ds3os does this — FromSoft stores them byte-swapped)
-                char* source = reinterpret_cast<char*>(&chr);
-                std::swap(source[0], source[1]);
+                if (isSwapped) {
+                    char* source = reinterpret_cast<char*>(&chr);
+                    std::swap(source[0], source[1]);
+                }
 
-                memcpy(ptr, source, sizeof(wchar_t));
+                memcpy(ptr, &chr, sizeof(wchar_t));
                 ptr++;
             }
 
