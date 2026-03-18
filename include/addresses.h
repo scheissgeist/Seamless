@@ -183,12 +183,15 @@ namespace Offsets {
         constexpr uint32_t PositionZ = 0x38;   // float
         constexpr uint32_t RotationY = 0x3C;   // float — facing angle (radians)
 
-        // Player stats
-        constexpr uint32_t Level = 0xD0;
-        constexpr uint32_t Health = 0x0;
-        constexpr uint32_t MaxHealth = 0x1C;
-        constexpr uint32_t HP = 0x34;
-        constexpr uint32_t Stamina = 0x44;     // float
+        // Player stats (from PlayerData base)
+        // HP / MaxHP verified in Bob Edition v4.09.5 CT — separate sub-object
+        // accessed via PlayerData + 0xD8 -> Health/MaxHP, but the CT also
+        // exposes HP directly at PlayerData + 0x3C and MaxHP at + 0x40.
+        // Using direct offsets confirmed by DS2S-META:
+        constexpr uint32_t Level     = 0xD0;
+        constexpr uint32_t Health    = 0x3C;   // int32 — current HP (was incorrectly 0x0)
+        constexpr uint32_t MaxHealth = 0x40;   // int32 — max HP   (was incorrectly 0x1C)
+        constexpr uint32_t Stamina   = 0x44;   // float
         constexpr uint32_t SoulMemory = 0xF4;
 
         // Character info

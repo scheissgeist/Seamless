@@ -268,6 +268,14 @@ void SessionManager::UpdatePlayerHealth(uint64_t playerId, int32_t health, int32
     }
 }
 
+void SessionManager::UpdatePlayerLevel(uint64_t playerId, uint32_t soulLevel) {
+    std::lock_guard<std::mutex> lock(m_playersMutex);
+    SessionPlayer* player = GetPlayer(playerId);
+    if (player) {
+        player->soulLevel = soulLevel;
+    }
+}
+
 void SessionManager::NotifyPlayerDeath(uint64_t playerId) {
     bool shouldBroadcast = false;
     {

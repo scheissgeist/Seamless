@@ -16,6 +16,7 @@
 
 #include "../../include/network.h"
 #include "../../include/sync.h"
+#include "../../include/hooks.h"
 #include "../../include/ui.h"
 #include "../../include/utils.h"
 #include <chrono>
@@ -376,6 +377,10 @@ void PeerManager::HandleHandshakePacket(const HandshakePacket* hs, const sockadd
 
             LOG_INFO("Peer accepted: %s (ID: %llu) from port %u",
                      hs->playerName, hs->playerId, newPeer.port);
+
+            // First real peer connected — activate seamless disconnect blocking now
+            DS2Coop::Hooks::ProtobufHooks::SetSeamlessActive(true);
+            LOG_INFO("[SEAMLESS] First peer connected — seamless mode ON");
         }
 
         // Send handshake response back so the joiner knows we accepted
@@ -389,7 +394,7 @@ void PeerManager::HandleHandshakePacket(const HandshakePacket* hs, const sockadd
         response.playerId = m_localPlayerId;
         std::string hostName = DS2Coop::Sync::PlayerSync::GetInstance().GetLocalCharacterName();
         strncpy_s(response.playerName, hostName.empty() ? "Host" : hostName.c_str(), sizeof(response.playerName));
-        strncpy_s(response.password, m_sessionPassword.c_str(), sizeof(response.password));
+        response.password[0] = '\0'; // never echo the password back
 
         SOCKET sock = reinterpret_cast<SOCKET>(m_socket);
         sendto(sock, reinterpret_cast<const char*>(&response), sizeof(response), 0,
@@ -414,7 +419,11 @@ void PeerManager::HandleHandshakePacket(const HandshakePacket* hs, const sockadd
         m_handshakeConfirmed = true;
         LOG_INFO("Connected to host: %s", hs->playerName);
 
-        // Now we can show the real notification
+        // Handshake confirmed — activate seamless disconnect blocking now
+        DS2Coop::Hooks::ProtobufHooks::SetSeamlessActive(true);
+        LOG_INFO("[SEAMLESS] Handshake confirmed — seamless mode ON");
+
+        // Show connection notification
         DS2Coop::UI::Overlay::GetInstance().ShowNotification("Connected to host! Seamless co-op active.", 5.0f);
     }
 

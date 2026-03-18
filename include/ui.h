@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 #include <thread>
+#include <mutex>
 
 namespace DS2Coop::UI {
 
@@ -69,6 +70,7 @@ private:
     };
     std::vector<Notification> m_notifications;
     uint32_t m_nextNotifId = 1;
+    mutable std::mutex m_notifMutex; // protects m_notifications from concurrent access
 };
 
 // DX11 Present hook — installs the ImGui renderer

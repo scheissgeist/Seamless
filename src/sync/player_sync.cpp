@@ -259,7 +259,7 @@ void PlayerSync::SyncLocalPlayerState() {
     }
 
     if (gotLevel) {
-        localPlayer->soulLevel = soulLevel;
+        sessionMgr.UpdatePlayerLevel(localId, soulLevel);
     } else {
         soulLevel = localPlayer->soulLevel;
     }

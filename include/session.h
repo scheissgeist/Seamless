@@ -58,6 +58,7 @@ public:
 
     void UpdatePlayerPosition(uint64_t playerId, float x, float y, float z);
     void UpdatePlayerHealth(uint64_t playerId, int32_t health, int32_t maxHealth);
+    void UpdatePlayerLevel(uint64_t playerId, uint32_t soulLevel);
     void NotifyPlayerDeath(uint64_t playerId);
     void NotifyPlayerRespawn(uint64_t playerId);
     

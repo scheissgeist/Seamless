@@ -107,6 +107,7 @@ static void FetchPublicIPThread() {
     }
     buf[total] = '\0';
     closesocket(sock);
+    WSACleanup(); // balance the WSAStartup at the top of this function
 
     // Parse IP from HTTP response body (last line after \r\n\r\n)
     char* body = strstr(buf, "\r\n\r\n");
@@ -198,7 +199,10 @@ void Overlay::ShowNotification(const std::string& message, float duration) {
     n.message = message;
     n.timeRemaining = duration;
     n.id = m_nextNotifId++;
-    m_notifications.push_back(n);
+    {
+        std::lock_guard<std::mutex> lock(m_notifMutex);
+        m_notifications.push_back(n);
+    }
     LOG_INFO("Notification: %s", message.c_str());
 }
 
@@ -412,8 +416,8 @@ void Overlay::RenderHostMenu() {
     if (ImGui::Button("Start Hosting", ImVec2(-1, 0))) {
         auto& sessionMgr = SessionManager::GetInstance();
         if (sessionMgr.CreateSession(m_inputPassword)) {
-            DS2Coop::Hooks::ProtobufHooks::SetSeamlessActive(true);
-            ShowNotification(std::string("Hosting! Password: ") + m_inputPassword, 6.0f);
+            // Seamless mode activates automatically when the first peer connects
+            ShowNotification(std::string("Hosting! Waiting for players..."), 6.0f);
             m_currentState = MenuState::Main;
         } else {
             ShowNotification("Failed to create session. Check log.", 4.0f);
@@ -463,7 +467,7 @@ void Overlay::RenderJoinMenu() {
     if (ImGui::Button("Connect", ImVec2(-1, 0))) {
         auto& sessionMgr = SessionManager::GetInstance();
         if (sessionMgr.JoinSession(m_inputIP, m_inputPassword)) {
-            DS2Coop::Hooks::ProtobufHooks::SetSeamlessActive(true);
+            // Seamless mode activates automatically when host confirms the handshake
             ShowNotification("Connecting... waiting for host response.", 5.0f);
             m_currentState = MenuState::Main;
         } else {
@@ -492,7 +496,13 @@ void Overlay::RenderPlayerList() {
 // Shown even when the menu is closed
 // ============================================================================
 void Overlay::RenderNotifications() {
-    if (m_notifications.empty()) return;
+    // Snapshot under lock so the update thread can push notifications safely
+    std::vector<Notification> snapshot;
+    {
+        std::lock_guard<std::mutex> lock(m_notifMutex);
+        if (m_notifications.empty()) return;
+        snapshot = m_notifications;
+    }
 
     float dt = ImGui::GetIO().DeltaTime;
 
@@ -509,9 +519,8 @@ void Overlay::RenderNotifications() {
     ImGuiIO& io = ImGui::GetIO();
     float y = io.DisplaySize.y - 20.0f;
 
-    for (auto it = m_notifications.end(); it != m_notifications.begin(); ) {
+    for (auto it = snapshot.end(); it != snapshot.begin(); ) {
         --it;
-        it->timeRemaining -= dt;
         if (it->timeRemaining <= 0.0f) continue;
 
         float alpha = it->timeRemaining < 1.0f ? it->timeRemaining : 1.0f;
@@ -522,17 +531,23 @@ void Overlay::RenderNotifications() {
         snprintf(id, sizeof(id), "##notif%u", it->id);
         ImGui::Begin(id, nullptr, notifFlags);
         ImGui::TextUnformatted(it->message.c_str());
+        // Use actual rendered window height for gap so notifications don't overlap
+        float winH = ImGui::GetWindowHeight();
         ImGui::End();
 
-        y -= 10.0f; // small gap between stacked notifications (auto-sized)
+        y -= winH + 4.0f;
     }
 
-    // Remove expired
-    m_notifications.erase(
-        std::remove_if(m_notifications.begin(), m_notifications.end(),
-            [](const Notification& n) { return n.timeRemaining <= 0.0f; }),
-        m_notifications.end()
-    );
+    // Tick timers and remove expired entries under lock
+    {
+        std::lock_guard<std::mutex> lock(m_notifMutex);
+        for (auto& n : m_notifications) n.timeRemaining -= dt;
+        m_notifications.erase(
+            std::remove_if(m_notifications.begin(), m_notifications.end(),
+                [](const Notification& n) { return n.timeRemaining <= 0.0f; }),
+            m_notifications.end()
+        );
+    }
 }
 
 // HandleInput is now done inside renderer.cpp's HookedPresent / HookedWndProc
