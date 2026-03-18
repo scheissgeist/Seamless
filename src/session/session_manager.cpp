@@ -8,6 +8,8 @@
 #include "../../include/ui.h"
 #include "../../include/utils.h"
 #include <algorithm>
+#include <mmsystem.h>
+#pragma comment(lib, "winmm.lib")
 #include <chrono>
 
 using namespace DS2Coop::Session;
@@ -210,8 +212,9 @@ void SessionManager::AddPlayer(uint64_t playerId, const std::string& name) {
     LOG_INFO("Player joined session: %s (ID: %llu) [Total: %zu players]",
              name.c_str(), playerId, m_players.size());
 
-    // Show notification
+    // Show notification + play sound
     UI::Overlay::GetInstance().ShowNotification(name + " joined the session", 4.0f);
+    PlaySoundW(L"SystemAsterisk", nullptr, SND_ALIAS | SND_ASYNC);
 }
 
 void SessionManager::RemovePlayer(uint64_t playerId) {
@@ -233,6 +236,7 @@ void SessionManager::RemovePlayer(uint64_t playerId) {
 
     if (!name.empty()) {
         UI::Overlay::GetInstance().ShowNotification(name + " left the session", 4.0f);
+        PlaySoundW(L"SystemExclamation", nullptr, SND_ALIAS | SND_ASYNC);
     }
 }
 

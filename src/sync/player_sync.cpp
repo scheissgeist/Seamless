@@ -86,19 +86,52 @@ static bool ReadCharacterNameRaw(uintptr_t playerData, wchar_t* nameBuf, int max
     }
 }
 
+// Try reading a wchar name from an address, convert to UTF-8. Returns "" on failure.
+static std::string WcharToUtf8(const wchar_t* buf) {
+    if (!buf || buf[0] == 0) return "";
+    if (buf[0] < 0x20) return ""; // not printable — likely a pointer, not a name
+    int len = WideCharToMultiByte(CP_UTF8, 0, buf, -1, nullptr, 0, nullptr, nullptr);
+    if (len <= 1) return "";
+    std::string result(len - 1, '\0');
+    WideCharToMultiByte(CP_UTF8, 0, buf, -1, &result[0], len, nullptr, nullptr);
+    return result;
+}
+
 static std::string ReadCharacterName() {
     uintptr_t playerData = 0;
     if (!ReadPlayerDataBase(playerData)) return "";
 
+    // Try direct read at PlayerData + CharacterName offset
     wchar_t nameBuf[32] = {};
-    if (!ReadCharacterNameRaw(playerData, nameBuf, 31)) return "";
-    if (nameBuf[0] == 0) return "";
+    if (ReadCharacterNameRaw(playerData, nameBuf, 31)) {
+        std::string name = WcharToUtf8(nameBuf);
+        if (!name.empty()) {
+            LOG_INFO("ReadCharacterName: '%s' (PlayerData+0x%X)", name.c_str(), Offsets::GameManager::CharacterName);
+            return name;
+        }
+    }
 
-    int len = WideCharToMultiByte(CP_UTF8, 0, nameBuf, -1, nullptr, 0, nullptr, nullptr);
-    if (len <= 0) return "";
-    std::string result(len - 1, '\0');
-    WideCharToMultiByte(CP_UTF8, 0, nameBuf, -1, &result[0], len, nullptr, nullptr);
-    return result;
+    // Try via NetSessionManager -> SessionPointer -> PlayerName
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    uintptr_t netSession = resolver.GetNetSessionManager();
+    if (netSession) {
+        uintptr_t sessionPtr = 0;
+        if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::SessionPointer, &sessionPtr) && sessionPtr) {
+            // Try at PlayerName offset (0x234)
+            memset(nameBuf, 0, sizeof(nameBuf));
+            if (ReadCharacterNameRaw(sessionPtr + Offsets::NetSession::PlayerName - Offsets::GameManager::CharacterName,
+                                     nameBuf, 31)) {
+                std::string name = WcharToUtf8(nameBuf);
+                if (!name.empty()) {
+                    LOG_INFO("ReadCharacterName: '%s' (NetSession PlayerName)", name.c_str());
+                    return name;
+                }
+            }
+        }
+    }
+
+    LOG_DEBUG("ReadCharacterName: no name found at any offset");
+    return "";
 }
 
 static bool ReadPlayerPosition(float& x, float& y, float& z, float& rotY) {
