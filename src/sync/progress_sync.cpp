@@ -34,8 +34,9 @@ void ProgressSync::Shutdown() {
 }
 
 void ProgressSync::SyncEventFlag(uint32_t flagId, bool value) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     LOG_DEBUG("Syncing event flag %u = %d", flagId, value);
-    
+
     m_eventFlags[flagId] = value;
     
     // Broadcast to other players
@@ -51,6 +52,7 @@ void ProgressSync::SyncEventFlag(uint32_t flagId, bool value) {
 }
 
 bool ProgressSync::GetEventFlag(uint32_t flagId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     auto it = m_eventFlags.find(flagId);
     return (it != m_eventFlags.end()) ? it->second : false;
 }
@@ -65,6 +67,7 @@ void ProgressSync::RequestEventFlagSync() {
 }
 
 void ProgressSync::SyncBossDefeat(uint32_t bossId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     if (m_defeatedBosses.find(bossId) != m_defeatedBosses.end()) {
         LOG_DEBUG("Boss %u already marked as defeated", bossId);
         return;
@@ -90,10 +93,12 @@ void ProgressSync::SyncBossDefeat(uint32_t bossId) {
 }
 
 bool ProgressSync::IsBossDefeated(uint32_t bossId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return m_defeatedBosses.find(bossId) != m_defeatedBosses.end();
 }
 
 void ProgressSync::SyncBonfire(uint32_t bonfireId, bool lit) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     LOG_INFO("Synchronizing bonfire %u: %s", bonfireId, lit ? "lit" : "unlit");
     
     if (lit) {
@@ -117,10 +122,12 @@ void ProgressSync::SyncBonfire(uint32_t bonfireId, bool lit) {
 }
 
 bool ProgressSync::IsBonfireLit(uint32_t bonfireId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     return m_litBonfires.find(bonfireId) != m_litBonfires.end();
 }
 
 void ProgressSync::SyncAllBonfires() {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     LOG_INFO("Synchronizing all bonfire states...");
     
     // In a full implementation, this would iterate through all known bonfires
@@ -132,8 +139,9 @@ void ProgressSync::SyncAllBonfires() {
 }
 
 void ProgressSync::SyncItemPickup(uint32_t itemId, uint32_t locationId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     uint64_t combinedId = (static_cast<uint64_t>(itemId) << 32) | locationId;
-    
+
     if (m_pickedItems.find(combinedId) != m_pickedItems.end()) {
         LOG_DEBUG("Item %u at location %u already picked up", itemId, locationId);
         return;
@@ -156,6 +164,7 @@ void ProgressSync::SyncItemPickup(uint32_t itemId, uint32_t locationId) {
 }
 
 bool ProgressSync::IsItemPickedUp(uint32_t itemId, uint32_t locationId) {
+    std::lock_guard<std::recursive_mutex> lock(m_mutex);
     uint64_t combinedId = (static_cast<uint64_t>(itemId) << 32) | locationId;
     return m_pickedItems.find(combinedId) != m_pickedItems.end();
 }

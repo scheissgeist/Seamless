@@ -195,9 +195,8 @@ void PlayerSync::SyncLocalPlayerPosition() {
 
     // Try reading from actual game memory first
     if (ReadPlayerPosition(x, y, z, rotY)) {
-        localPlayer->x = x;
-        localPlayer->y = y;
-        localPlayer->z = z;
+        // Store back to session manager (the copy is discarded, so write directly)
+        sessionMgr.UpdatePlayerPosition(localId, x, y, z);
     } else {
         x = localPlayer->x;
         y = localPlayer->y;
@@ -253,9 +252,7 @@ void PlayerSync::SyncLocalPlayerState() {
     ReadPlayerStamina(stamina);
 
     if (gotHealth) {
-        localPlayer->health = health;
-        localPlayer->maxHealth = maxHealth;
-        localPlayer->isAlive = (health > 0);
+        sessionMgr.UpdatePlayerHealth(localId, health, maxHealth);
     } else {
         health = localPlayer->health;
         maxHealth = localPlayer->maxHealth;

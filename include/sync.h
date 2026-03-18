@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <mutex>
 #include <unordered_set>
 #include <unordered_map>
 
@@ -44,10 +45,11 @@ private:
     ProgressSync& operator=(const ProgressSync&) = delete;
     
     bool m_initialized = false;
+    std::recursive_mutex m_mutex;
     std::unordered_map<uint32_t, bool> m_eventFlags;
     std::unordered_set<uint32_t> m_defeatedBosses;
     std::unordered_set<uint32_t> m_litBonfires;
-    std::unordered_map<uint64_t, bool> m_pickedItems; // Combined itemId and locationId
+    std::unordered_map<uint64_t, bool> m_pickedItems;
 };
 
 // Player synchronization manager

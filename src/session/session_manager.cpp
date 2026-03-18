@@ -269,38 +269,45 @@ void SessionManager::UpdatePlayerHealth(uint64_t playerId, int32_t health, int32
 }
 
 void SessionManager::NotifyPlayerDeath(uint64_t playerId) {
-    std::lock_guard<std::mutex> lock(m_playersMutex);
-    SessionPlayer* player = GetPlayer(playerId);
-    if (player) {
-        player->isAlive = false;
-        LOG_INFO("Player %s died", player->playerName.c_str());
-
+    bool shouldBroadcast = false;
+    {
+        std::lock_guard<std::mutex> lock(m_playersMutex);
+        SessionPlayer* player = GetPlayer(playerId);
+        if (player) {
+            player->isAlive = false;
+            LOG_INFO("Player %s died", player->playerName.c_str());
+            shouldBroadcast = true;
+        }
+    }
+    // Broadcast OUTSIDE the lock to avoid deadlock with m_peersMutex
+    if (shouldBroadcast) {
         Network::PacketHeader deathPacket{};
         deathPacket.magic = 0x44533243;
         deathPacket.type = Network::PacketType::PlayerDeath;
         deathPacket.size = sizeof(Network::PacketHeader);
         deathPacket.timestamp = 0;
-
-        auto& peerMgr = Network::PeerManager::GetInstance();
-        peerMgr.BroadcastPacket(&deathPacket);
+        Network::PeerManager::GetInstance().BroadcastPacket(&deathPacket);
     }
 }
 
 void SessionManager::NotifyPlayerRespawn(uint64_t playerId) {
-    std::lock_guard<std::mutex> lock(m_playersMutex);
-    SessionPlayer* player = GetPlayer(playerId);
-    if (player) {
-        player->isAlive = true;
-        LOG_INFO("Player %s respawned", player->playerName.c_str());
-
+    bool shouldBroadcast = false;
+    {
+        std::lock_guard<std::mutex> lock(m_playersMutex);
+        SessionPlayer* player = GetPlayer(playerId);
+        if (player) {
+            player->isAlive = true;
+            LOG_INFO("Player %s respawned", player->playerName.c_str());
+            shouldBroadcast = true;
+        }
+    }
+    if (shouldBroadcast) {
         Network::PacketHeader respawnPacket{};
         respawnPacket.magic = 0x44533243;
         respawnPacket.type = Network::PacketType::PlayerRespawn;
         respawnPacket.size = sizeof(Network::PacketHeader);
         respawnPacket.timestamp = 0;
-
-        auto& peerMgr = Network::PeerManager::GetInstance();
-        peerMgr.BroadcastPacket(&respawnPacket);
+        Network::PeerManager::GetInstance().BroadcastPacket(&respawnPacket);
     }
 }
 
