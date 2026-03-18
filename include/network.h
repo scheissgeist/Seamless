@@ -145,7 +145,9 @@ private:
     std::string m_sessionPassword;
     std::vector<PeerInfo> m_peers;
     void* m_socket = nullptr;
-    uint64_t m_lastHeartbeatMs = 0; // replaces static in SendHeartbeats()
+    uint64_t m_lastHeartbeatMs = 0;
+    uint64_t m_connectingTimestampMs = 0; // for handshake timeout
+    bool m_handshakeConfirmed = false;    // set true when host responds
 };
 
 // Packet handler for processing received packets

@@ -15,6 +15,7 @@
 #pragma comment(lib, "ws2_32.lib")
 
 #include "../../include/network.h"
+#include "../../include/ui.h"
 #include "../../include/utils.h"
 #include <chrono>
 #include <algorithm>
@@ -159,6 +160,8 @@ bool PeerManager::JoinSession(const std::string& address, uint16_t port, const s
 
     m_isHost = false;
     m_connected = true;
+    m_handshakeConfirmed = false;
+    m_connectingTimestampMs = NowMs();
 
     LOG_INFO("Handshake sent, waiting for response...");
     return true;
@@ -193,6 +196,17 @@ void PeerManager::Update() {
     HandleIncomingPackets();
     SendHeartbeats();
     CheckTimeouts();
+
+    // Client-side: check for handshake timeout (10 seconds)
+    if (!m_isHost && !m_handshakeConfirmed && m_connectingTimestampMs > 0) {
+        uint64_t elapsed = NowMs() - m_connectingTimestampMs;
+        if (elapsed > 10000) {
+            LOG_WARNING("Handshake timeout — host did not respond in 10s");
+            DS2Coop::UI::Overlay::GetInstance().ShowNotification(
+                "Connection timed out. Check IP and make sure host is running.", 6.0f);
+            LeaveSession();
+        }
+    }
 }
 
 bool PeerManager::SendPacket(const PacketHeader* packet, uint64_t targetPlayerId) {
@@ -263,6 +277,15 @@ void PeerManager::HandleIncomingPackets() {
             HandshakePacket* hs = reinterpret_cast<HandshakePacket*>(buffer);
             HandleHandshakePacket(hs, senderAddr);
             continue;
+        }
+
+        // Handle disconnect/rejection from host (wrong password)
+        if (header->type == PacketType::Disconnect && !m_isHost) {
+            LOG_WARNING("Received disconnect from host — wrong password or rejected");
+            DS2Coop::UI::Overlay::GetInstance().ShowNotification(
+                "Rejected by host. Wrong password?", 5.0f);
+            LeaveSession();
+            return;
         }
 
         // For other packets, update the peer's heartbeat
@@ -376,7 +399,11 @@ void PeerManager::HandleHandshakePacket(const HandshakePacket* hs, const sockadd
             }
         }
 
+        m_handshakeConfirmed = true;
         LOG_INFO("Connected to host: %s", hs->playerName);
+
+        // Now we can show the real notification
+        DS2Coop::UI::Overlay::GetInstance().ShowNotification("Connected to host! Seamless co-op active.", 5.0f);
     }
 
     // Forward to packet handler for session manager integration

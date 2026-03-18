@@ -450,7 +450,7 @@ void Overlay::RenderJoinMenu() {
         auto& sessionMgr = SessionManager::GetInstance();
         if (sessionMgr.JoinSession(m_inputIP, m_inputPassword)) {
             DS2Coop::Hooks::ProtobufHooks::SetSeamlessActive(true);
-            ShowNotification("Connected! Seamless co-op active.", 5.0f);
+            ShowNotification("Connecting... waiting for host response.", 5.0f);
             m_currentState = MenuState::Main;
         } else {
             ShowNotification("Connection failed. Check IP/password.", 4.0f);
