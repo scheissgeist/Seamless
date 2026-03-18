@@ -4,6 +4,7 @@
 
 #include "../../include/session.h"
 #include "../../include/network.h"
+#include "../../include/hooks.h"
 #include "../../include/sync.h"
 #include "../../include/ui.h"
 #include "../../include/utils.h"
@@ -89,6 +90,13 @@ bool SessionManager::CreateSession(const std::string& password) {
 
     TransitionToState(SessionState::Connected);
 
+    // Set up sign filtering — add our own Steam ID to the whitelist
+    Hooks::ProtobufHooks::ClearSessionSteamIds();
+    std::string localSteam = Hooks::ProtobufHooks::GetLocalSteamId();
+    if (!localSteam.empty()) {
+        Hooks::ProtobufHooks::AddSessionSteamId(localSteam);
+    }
+
     LOG_INFO("Session created. Local player ID: %llu", m_localPlayerId);
     return true;
 }
@@ -145,6 +153,13 @@ bool SessionManager::JoinSession(const std::string& address, const std::string& 
     }
 
     TransitionToState(SessionState::Connected);
+
+    // Set up sign filtering
+    Hooks::ProtobufHooks::ClearSessionSteamIds();
+    std::string localSteam = Hooks::ProtobufHooks::GetLocalSteamId();
+    if (!localSteam.empty()) {
+        Hooks::ProtobufHooks::AddSessionSteamId(localSteam);
+    }
 
     LOG_INFO("Joined session. Local player ID: %llu", m_localPlayerId);
     return true;

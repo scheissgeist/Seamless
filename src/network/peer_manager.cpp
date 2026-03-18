@@ -136,7 +136,10 @@ bool PeerManager::JoinSession(const std::string& address, uint16_t port, const s
     handshake.playerId = m_localPlayerId;
     std::string charName = DS2Coop::Sync::PlayerSync::GetInstance().GetLocalCharacterName();
     strncpy_s(handshake.playerName, charName.empty() ? "Player" : charName.c_str(), sizeof(handshake.playerName));
-    strncpy_s(handshake.password, password.c_str(), sizeof(handshake.password));
+    // Send password + Steam ID so host can whitelist our signs
+    std::string steamId = DS2Coop::Hooks::ProtobufHooks::GetLocalSteamId();
+    std::string pwWithSteam = password + "|" + steamId;
+    strncpy_s(handshake.password, pwWithSteam.c_str(), sizeof(handshake.password));
 
     // Send to host
     sockaddr_in hostAddr{};
@@ -339,7 +342,12 @@ void PeerManager::HandleHandshakePacket(const HandshakePacket* hs, const sockadd
 
     if (m_isHost) {
         // Host: validate password and accept/reject
-        if (m_sessionPassword != hs->password) {
+        // Password field is "password|steamid" — extract just the password part
+        std::string receivedPw(hs->password);
+        size_t pipePos = receivedPw.find('|');
+        std::string justPassword = (pipePos != std::string::npos) ? receivedPw.substr(0, pipePos) : receivedPw;
+
+        if (m_sessionPassword != justPassword) {
             LOG_WARNING("Peer rejected: wrong password");
             // Send rejection (a disconnect packet)
             PacketHeader reject{};
@@ -377,6 +385,13 @@ void PeerManager::HandleHandshakePacket(const HandshakePacket* hs, const sockadd
 
             LOG_INFO("Peer accepted: %s (ID: %llu) from port %u",
                      hs->playerName, hs->playerId, newPeer.port);
+
+            // Extract peer's Steam ID from password field ("password|steamid")
+            std::string pw(hs->password);
+            size_t pipe = pw.find('|');
+            if (pipe != std::string::npos && pipe + 1 < pw.size()) {
+                DS2Coop::Hooks::ProtobufHooks::AddSessionSteamId(pw.substr(pipe + 1));
+            }
 
             // First real peer connected — activate seamless disconnect blocking now
             DS2Coop::Hooks::ProtobufHooks::SetSeamlessActive(true);

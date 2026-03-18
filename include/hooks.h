@@ -8,6 +8,7 @@
 // messages (opcodes 0x03F9, 0x03EB, 0x03E9) to keep sessions alive.
 
 #pragma once
+#include <string>
 
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
@@ -69,6 +70,11 @@ namespace ProtobufHooks {
     // Stats for debugging
     uint32_t GetBlockedMessageCount();
     uint32_t GetTotalMessageCount();
+
+    // Sign filtering — only show summon signs from session members
+    void AddSessionSteamId(const std::string& steamId);
+    void ClearSessionSteamIds();
+    std::string GetLocalSteamId();
 }
 
 // ============================================================================

@@ -15,12 +15,15 @@
 #include "../../include/hooks.h"
 #include "../../include/addresses.h"
 #include "../../include/session.h"
+#include "../../include/network.h"
 #include "../../include/utils.h"
 #include "../../include/pattern_scanner.h"
 #include "MinHook.h"
 #include <typeinfo>
 #include <string>
+#include <vector>
 #include <atomic>
+#include <mutex>
 
 using namespace DS2Coop::Hooks;
 using namespace DS2Coop::Utils;
@@ -32,6 +35,86 @@ using namespace DS2Coop::Addresses;
 static std::atomic<bool> g_seamlessActive{false};
 static std::atomic<uint32_t> g_blockedCount{0};
 static std::atomic<uint32_t> g_totalCount{0};
+
+// Steam ID whitelist — only signs from these players are shown
+static std::vector<std::string> g_sessionSteamIds;
+static std::mutex g_steamIdMutex;
+static std::string g_localSteamId;
+
+// ============================================================================
+// Get local Steam ID from steam_api64.dll
+// ============================================================================
+typedef uint64_t(*SteamID_t)();
+
+static uint64_t SafeCallGetSteamID(void* userIface) {
+    typedef uint64_t(__fastcall* Fn)(void*);
+    void** vt = *reinterpret_cast<void***>(userIface);
+    auto fn = reinterpret_cast<Fn>(vt[2]);
+    __try { return fn(userIface); }
+    __except(EXCEPTION_EXECUTE_HANDLER) { return 0; }
+}
+
+static std::string GetLocalSteamIdInternal() {
+    if (!g_localSteamId.empty()) return g_localSteamId;
+
+    HMODULE hSteam = GetModuleHandleW(L"steam_api64.dll");
+    if (!hSteam) return "";
+
+    typedef void*(*GetSteamUser_t)();
+    auto SteamUser = reinterpret_cast<GetSteamUser_t>(GetProcAddress(hSteam, "SteamAPI_SteamUser_v023"));
+    if (!SteamUser) SteamUser = reinterpret_cast<GetSteamUser_t>(GetProcAddress(hSteam, "SteamAPI_SteamUser_v021"));
+    if (!SteamUser) return "";
+
+    void* user = SteamUser();
+    if (!user) return "";
+
+    uint64_t steamId = SafeCallGetSteamID(user);
+    if (steamId == 0) return "";
+
+    g_localSteamId = std::to_string(steamId);
+    LOG_INFO("[STEAM] Local Steam ID: %s", g_localSteamId.c_str());
+    return g_localSteamId;
+}
+
+// ============================================================================
+// Check if raw protobuf bytes contain a steam_id from our session
+// Field 5 (player_steam_id) has wire key 0x2A (field 5, type 2 = length-delimited)
+// ============================================================================
+static bool ContainsSessionSteamId(const uint8_t* data, int size) {
+    std::lock_guard<std::mutex> lock(g_steamIdMutex);
+    if (g_sessionSteamIds.empty()) return true; // no filter active
+
+    // Scan for wire key 0x2A followed by varint length then steam ID string
+    for (int i = 0; i < size - 20; i++) {
+        if (data[i] == 0x2A) {
+            // Read varint length
+            int len = 0;
+            int j = i + 1;
+            if (j < size) {
+                len = data[j] & 0x7F;
+                if (data[j] & 0x80 && j + 1 < size) {
+                    len |= (data[j + 1] & 0x7F) << 7;
+                    j++;
+                }
+                j++;
+            }
+            // Steam IDs are 17 digits starting with "7656119"
+            if (len >= 17 && len <= 20 && j + len <= size) {
+                std::string candidate(reinterpret_cast<const char*>(data + j), len);
+                if (candidate.substr(0, 7) == "7656119") {
+                    // Found a Steam ID — check if it's in our session
+                    for (const auto& sid : g_sessionSteamIds) {
+                        if (sid == candidate) return true;
+                    }
+                    // Steam ID found but not in session — block this sign
+                    return false;
+                }
+            }
+        }
+    }
+
+    return true; // no steam ID found in message — allow through
+}
 
 // Original function pointers
 static ProtobufHooks::SerializeFunc g_originalSerialize = nullptr;
@@ -204,6 +287,16 @@ static bool __fastcall ParseHook(void* thisPtr, void* data, int size) {
             g_blockedCount++;
             return false;
         }
+
+        // Filter summon signs — only show signs from players in our session
+        if (g_seamlessActive.load() && data && size > 0 &&
+            (strstr(className, "SummonSign") || strstr(className, "SignList") ||
+             strstr(className, "PushSign"))) {
+            if (!ContainsSessionSteamId(static_cast<const uint8_t*>(data), size)) {
+                LOG_DEBUG("[SEAMLESS] Filtered sign from non-session player");
+                return false;
+            }
+        }
     }
 
     return result;
@@ -308,4 +401,24 @@ uint32_t ProtobufHooks::GetBlockedMessageCount() {
 
 uint32_t ProtobufHooks::GetTotalMessageCount() {
     return g_totalCount.load();
+}
+
+void ProtobufHooks::AddSessionSteamId(const std::string& steamId) {
+    std::lock_guard<std::mutex> lock(g_steamIdMutex);
+    // Don't add duplicates
+    for (const auto& s : g_sessionSteamIds) {
+        if (s == steamId) return;
+    }
+    g_sessionSteamIds.push_back(steamId);
+    LOG_INFO("[SEAMLESS] Added session Steam ID: %s (total: %zu)", steamId.c_str(), g_sessionSteamIds.size());
+}
+
+void ProtobufHooks::ClearSessionSteamIds() {
+    std::lock_guard<std::mutex> lock(g_steamIdMutex);
+    g_sessionSteamIds.clear();
+    LOG_INFO("[SEAMLESS] Cleared session Steam ID whitelist");
+}
+
+std::string ProtobufHooks::GetLocalSteamId() {
+    return GetLocalSteamIdInternal();
 }
