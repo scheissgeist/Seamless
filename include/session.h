@@ -1,0 +1,90 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+#include <unordered_map>
+
+namespace DS2Coop::Session {
+
+// Session state
+enum class SessionState {
+    Disconnected,
+    Connecting,
+    Connected,
+    InGame,
+    Error
+};
+
+// Player information in session
+struct SessionPlayer {
+    uint64_t playerId;
+    std::string playerName;
+    uint32_t soulLevel;
+    float x, y, z;
+    int32_t health;
+    int32_t maxHealth;
+    bool isAlive;
+    bool isReady;
+};
+
+// Session manager for co-op sessions
+class SessionManager {
+public:
+    static SessionManager& GetInstance();
+    
+    bool Initialize();
+    void Shutdown();
+    
+    bool CreateSession(const std::string& password);
+    bool JoinSession(const std::string& address, const std::string& password);
+    void LeaveSession();
+    
+    void Update(float deltaTime);
+    
+    SessionState GetState() const { return m_state; }
+    bool IsActive() const { return m_state == SessionState::Connected || m_state == SessionState::InGame; }
+    bool IsHost() const { return m_isHost; }
+    
+    const std::vector<SessionPlayer>& GetPlayers() const { return m_players; }
+    SessionPlayer* GetPlayer(uint64_t playerId);
+    SessionPlayer* GetLocalPlayer();
+
+    void AddPlayer(uint64_t playerId, const std::string& name);
+    void RemovePlayer(uint64_t playerId);
+
+    void UpdatePlayerPosition(uint64_t playerId, float x, float y, float z);
+    void UpdatePlayerHealth(uint64_t playerId, int32_t health, int32_t maxHealth);
+    void NotifyPlayerDeath(uint64_t playerId);
+    void NotifyPlayerRespawn(uint64_t playerId);
+    
+    // Session events that should persist
+    void OnBossDefeated(uint32_t bossId);
+    void OnBonfireRested(uint32_t bonfireId);
+    void OnFogGateEntered(uint32_t fogGateId);
+    
+    // Prevent session disconnection
+    void PreventDisconnection();
+    void AllowDisconnection();
+
+private:
+    SessionManager() = default;
+    ~SessionManager() = default;
+    SessionManager(const SessionManager&) = delete;
+    SessionManager& operator=(const SessionManager&) = delete;
+    
+    void TransitionToState(SessionState newState);
+    void SynchronizePlayers();
+    
+    bool m_initialized = false;
+    SessionState m_state = SessionState::Disconnected;
+    bool m_isHost = false;
+    bool m_preventDisconnect = false;
+    uint64_t m_localPlayerId = 0;
+    std::string m_sessionPassword;
+    std::vector<SessionPlayer> m_players;
+    std::unordered_map<uint64_t, SessionPlayer*> m_playerMap;
+};
+
+} // namespace DS2Coop::Session
+
