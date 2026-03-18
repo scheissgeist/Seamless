@@ -185,12 +185,13 @@ static const char* GetRttiClassName(void* obj) {
 // Check if a message class name corresponds to a disconnect/leave message
 // ============================================================================
 // Messages to block when SENDING (outgoing — serialize hook)
-// Only block the server notification that the session is ending.
-// Do NOT block voluntary leaves (homeward bone, aged feather) or the game crashes.
+// Block ALL disconnect/leave messages. This is aggressive but necessary —
+// the game sends these after boss kills, deaths, and area transitions.
 static bool IsOutgoingDisconnect(const char* className) {
     if (!className) return false;
-    if (strstr(className, "NotifyDisconnectSession")) return true;
-    if (strstr(className, "NotifyLeaveGuestPlayer")) return true;
+    if (strstr(className, "DisconnectSession")) return true;
+    if (strstr(className, "LeaveSession")) return true;
+    if (strstr(className, "LeaveGuestPlayer")) return true;
     return false;
 }
 
@@ -232,6 +233,7 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
     // If seamless mode is active, block disconnect messages
     if (g_seamlessActive.load()) {
         if (IsOutgoingDisconnect(className)) {
+            LOG_INFO("[SEAMLESS] Seamless is ON, blocking: %s", className);
             g_blockedCount++;
             LOG_INFO("[SEAMLESS] BLOCKED outgoing message: %s (total blocked: %u)",
                      className, g_blockedCount.load());
@@ -248,13 +250,14 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
         }
     }
 
-    // Log ALL session-related messages so we can see what the game sends
+    // Log ALL session-related messages
     if (strstr(className, "Session") || strstr(className, "Sign") ||
         strstr(className, "Guest") || strstr(className, "BreakIn") ||
         strstr(className, "Leave") || strstr(className, "Return") ||
         strstr(className, "Banish") || strstr(className, "Remove") ||
         strstr(className, "Phantom") || strstr(className, "Summon")) {
-        LOG_INFO("[PROTOBUF >>] %s", className);
+        LOG_INFO("[PROTOBUF >>] %s (seamless=%s)", className,
+                 g_seamlessActive.load() ? "ON" : "OFF");
     }
 
     // Call original for all non-blocked messages
