@@ -98,39 +98,8 @@ static std::string WcharToUtf8(const wchar_t* buf) {
 }
 
 static std::string ReadCharacterName() {
-    uintptr_t playerData = 0;
-    if (!ReadPlayerDataBase(playerData)) return "";
-
-    // Try direct read at PlayerData + CharacterName offset
-    wchar_t nameBuf[32] = {};
-    if (ReadCharacterNameRaw(playerData, nameBuf, 31)) {
-        std::string name = WcharToUtf8(nameBuf);
-        if (!name.empty()) {
-            LOG_INFO("ReadCharacterName: '%s' (PlayerData+0x%X)", name.c_str(), Offsets::GameManager::CharacterName);
-            return name;
-        }
-    }
-
-    // Try via NetSessionManager -> SessionPointer -> PlayerName
-    auto& resolver = DS2Coop::AddressResolver::GetInstance();
-    uintptr_t netSession = resolver.GetNetSessionManager();
-    if (netSession) {
-        uintptr_t sessionPtr = 0;
-        if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::SessionPointer, &sessionPtr) && sessionPtr) {
-            // Try at PlayerName offset (0x234)
-            memset(nameBuf, 0, sizeof(nameBuf));
-            if (ReadCharacterNameRaw(sessionPtr + Offsets::NetSession::PlayerName - Offsets::GameManager::CharacterName,
-                                     nameBuf, 31)) {
-                std::string name = WcharToUtf8(nameBuf);
-                if (!name.empty()) {
-                    LOG_INFO("ReadCharacterName: '%s' (NetSession PlayerName)", name.c_str());
-                    return name;
-                }
-            }
-        }
-    }
-
-    LOG_DEBUG("ReadCharacterName: no name found at any offset");
+    // Character name offset not yet verified for this game version.
+    // Return empty so callers fall back to "Host"/"Player".
     return "";
 }
 
@@ -194,10 +163,9 @@ void PlayerSync::Update(float deltaTime) {
             m_stateSyncTimer = 0.0f;
         }
 
-        // Silently keep phantom timer maxed (every 2 seconds)
-        if (m_phantomTimerRefresh >= 2.0f) {
+        // Silently keep phantom timer maxed (every 5 seconds)
+        if (m_phantomTimerRefresh >= 5.0f) {
             MaxPhantomTimer();
-            EnableSummoning();
             m_phantomTimerRefresh = 0.0f;
         }
     }
@@ -495,20 +463,8 @@ bool PlayerSync::MaxPhantomTimer() {
 // Only runs while seamless mode is active.
 // ============================================================================
 void PlayerSync::EnableSummoning() {
-    if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
-
-    uintptr_t playerData = 0;
-    if (!ReadPlayerDataBase(playerData)) return;
-
-    // Clear hollowing so summon signs are visible while hollow
-    __try {
-        uint8_t hollowing = 0;
-        if (Memory::Read<uint8_t>(playerData + Offsets::GameManager::Hollowing, &hollowing) && hollowing != 0) {
-            Memory::Write<uint8_t>(playerData + Offsets::GameManager::Hollowing, (uint8_t)0);
-        }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {
-        // Hollowing offset might be wrong for this game version — silently skip
-    }
+    // Hollowing offset (0x1AC) not verified — disabled to prevent crashes.
+    // Players can use Human Effigy to restore humanity manually.
 }
 
 std::string PlayerSync::GetLocalCharacterName() {
