@@ -11,8 +11,10 @@
 #include "../../include/network.h"
 #include "../../include/addresses.h"
 #include "../../include/address_resolver.h"
+#include "../../include/pattern_scanner.h"
 #include "../../include/utils.h"
 #include <chrono>
+#include <cfloat>
 
 using namespace DS2Coop::Sync;
 using namespace DS2Coop::Utils;
@@ -260,60 +262,97 @@ void PlayerSync::SyncEquipment(uint64_t playerId) {
 }
 
 // ============================================================================
+// Item struct for the game's internal ItemGive function (16 bytes)
+// ============================================================================
+#pragma pack(push, 1)
+struct DS2ItemStruct {
+    int32_t  type;       // 3 = consumable
+    int32_t  itemId;     // e.g. 0x03B280B0
+    float    durability; // FLT_MAX
+    int16_t  quantity;   // count
+    uint8_t  upgrade;    // 0-10
+    uint8_t  infusion;   // 0 = none
+};
+#pragma pack(pop)
+
+// x64 fastcall: void ItemGive(void* bag, DS2ItemStruct* items, int count, int mode)
+typedef void (__fastcall *ItemGiveFunc)(void* bag, DS2ItemStruct* items, int count, int mode);
+static ItemGiveFunc g_itemGiveFunc = nullptr;
+static bool g_itemGiveScanned = false;
+
+// ============================================================================
+// Resolve the ItemGive function and AvailableItemBag pointer
+// ============================================================================
+static bool ResolveItemGive(uintptr_t& outBag) {
+    // Find ItemGive function via AOB (only scan once)
+    if (!g_itemGiveScanned) {
+        g_itemGiveScanned = true;
+        uintptr_t addr = DS2Coop::Utils::PatternScanner::FindPattern(
+            ItemGib::ITEM_GIVE_PATTERN,
+            ItemGib::ITEM_GIVE_MASK,
+            nullptr);
+        if (addr) {
+            g_itemGiveFunc = reinterpret_cast<ItemGiveFunc>(addr);
+            LOG_INFO("ItemGive function found at %p", reinterpret_cast<void*>(addr));
+        } else {
+            LOG_WARNING("ItemGive function not found — soapstone grant unavailable");
+        }
+    }
+
+    if (!g_itemGiveFunc) return false;
+
+    // Resolve AvailableItemBag: [BaseA] -> +0xA8 -> +0x10 -> +0x10
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    uintptr_t baseA = resolver.GetGameManagerImp();
+    if (!baseA) return false;
+
+    uintptr_t ptr1 = 0, ptr2 = 0, bag = 0;
+    if (!Memory::Read<uintptr_t>(baseA + ItemGib::AvailItemBag_Off1, &ptr1) || !ptr1) return false;
+    if (!Memory::Read<uintptr_t>(ptr1 + ItemGib::AvailItemBag_Off2, &ptr2) || !ptr2) return false;
+    if (!Memory::Read<uintptr_t>(ptr2 + ItemGib::AvailItemBag_Off3, &bag) || !bag) return false;
+
+    outBag = bag;
+    return true;
+}
+
+// ============================================================================
 // Grant White Sign Soapstone + Small White Sign Soapstone
-// Scans inventory for empty slots and writes item IDs
+// Calls the game's internal ItemGive function
 // ============================================================================
 bool PlayerSync::GrantSoapstones() {
-    uintptr_t playerData = 0;
-    if (!ReadPlayerDataBase(playerData)) {
-        LOG_ERROR("GrantSoapstones: could not read PlayerData base");
+    uintptr_t bag = 0;
+    if (!ResolveItemGive(bag)) {
+        LOG_WARNING("GrantSoapstones: could not resolve ItemGive or AvailableItemBag");
         return false;
     }
 
-    uintptr_t invBase = playerData + Offsets::GameManager::InventoryBase;
-    uint32_t itemsToGrant[] = {
-        Addresses::ItemIDs::WhiteSignSoapstone,
-        Addresses::ItemIDs::SmallWhiteSignSoapstone
-    };
+    DS2ItemStruct items[2] = {};
 
-    for (uint32_t itemId : itemsToGrant) {
-        // Check if player already has this item (scan first 256 slots)
-        bool alreadyHas = false;
-        for (int i = 0; i < 256; i++) {
-            uint32_t slotItem = 0;
-            if (Memory::Read<uint32_t>(invBase + i * Offsets::GameManager::InventorySlotSize, &slotItem)) {
-                if (slotItem == itemId) {
-                    alreadyHas = true;
-                    break;
-                }
-            }
-        }
+    // White Sign Soapstone
+    items[0].type       = ItemCategory::Consumable;
+    items[0].itemId     = ItemIDs::WhiteSignSoapstone;
+    items[0].durability = FLT_MAX;
+    items[0].quantity   = 1;
+    items[0].upgrade    = 0;
+    items[0].infusion   = 0;
 
-        if (alreadyHas) {
-            LOG_INFO("GrantSoapstones: player already has item 0x%08X", itemId);
-            continue;
-        }
+    // Small White Sign Soapstone
+    items[1].type       = ItemCategory::Consumable;
+    items[1].itemId     = ItemIDs::SmallWhiteSignSoapstone;
+    items[1].durability = FLT_MAX;
+    items[1].quantity   = 1;
+    items[1].upgrade    = 0;
+    items[1].infusion   = 0;
 
-        // Find first empty slot (item ID == 0)
-        bool granted = false;
-        for (int i = 0; i < 256; i++) {
-            uint32_t slotItem = 0;
-            uintptr_t slotAddr = invBase + i * Offsets::GameManager::InventorySlotSize;
-            if (Memory::Read<uint32_t>(slotAddr, &slotItem) && slotItem == 0) {
-                if (Memory::Write<uint32_t>(slotAddr, itemId)) {
-                    LOG_INFO("GrantSoapstones: wrote item 0x%08X to slot %d", itemId, i);
-                    granted = true;
-                    break;
-                }
-            }
-        }
-
-        if (!granted) {
-            LOG_WARNING("GrantSoapstones: could not find empty slot for 0x%08X", itemId);
-        }
+    __try {
+        g_itemGiveFunc(reinterpret_cast<void*>(bag), items, 2, 0);
+        LOG_INFO("GrantSoapstones: gave 2 soapstones via ItemGive");
+        return true;
     }
-
-    return true;
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERROR("GrantSoapstones: ItemGive crashed — wrong address or bad pointer chain");
+        return false;
+    }
 }
 
 // ============================================================================

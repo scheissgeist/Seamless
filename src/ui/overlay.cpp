@@ -284,9 +284,9 @@ void Overlay::RenderMainMenu() {
 
         if (ImGui::Button("Grant Soapstones", ImVec2(-1, 0))) {
             if (DS2Coop::Sync::PlayerSync::GetInstance().GrantSoapstones()) {
-                ShowNotification("Soapstones granted! Check your inventory.", 4.0f);
+                ShowNotification("Soapstones added to inventory!", 4.0f);
             } else {
-                ShowNotification("Could not grant items. Are you in-game?", 4.0f);
+                ShowNotification("Could not grant items. Try again in-game.", 4.0f);
             }
         }
 

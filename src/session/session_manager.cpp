@@ -81,9 +81,6 @@ bool SessionManager::CreateSession(const std::string& password) {
 
     TransitionToState(SessionState::Connected);
 
-    // Auto-grant soapstones so players can summon immediately
-    Sync::PlayerSync::GetInstance().GrantSoapstones();
-
     LOG_INFO("Session created. Local player ID: %llu", m_localPlayerId);
     return true;
 }
@@ -136,9 +133,6 @@ bool SessionManager::JoinSession(const std::string& address, const std::string& 
     Sync::ProgressSync::GetInstance().Initialize();
 
     TransitionToState(SessionState::Connected);
-
-    // Auto-grant soapstones so players can summon immediately
-    Sync::PlayerSync::GetInstance().GrantSoapstones();
 
     LOG_INFO("Joined session. Local player ID: %llu", m_localPlayerId);
     return true;

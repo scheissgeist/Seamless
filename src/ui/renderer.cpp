@@ -60,6 +60,10 @@ static UINT                    g_rtvHeight        = 0;
 using PresentFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT);
 static PresentFn g_originalPresent = nullptr;
 
+// ResizeBuffers hook — slot 13 in IDXGISwapChain vtable
+using ResizeBuffersFn = HRESULT(STDMETHODCALLTYPE*)(IDXGISwapChain*, UINT, UINT, UINT, DXGI_FORMAT, UINT);
+static ResizeBuffersFn g_originalResizeBuffers = nullptr;
+
 // ============================================================================
 // RTV helper — create/recreate from the swap chain's current backbuffer
 // ============================================================================
@@ -110,6 +114,37 @@ static LRESULT CALLBACK HookedWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
     WNDPROC current = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(hwnd, GWLP_WNDPROC));
     if (current == HookedWndProc) current = g_originalWndProc; // avoid self-loop
     return CallWindowProcW(current, hwnd, msg, wParam, lParam);
+}
+
+// ============================================================================
+// Hooked ResizeBuffers — called when the game changes resolution/fullscreen
+// We must release our RTV before the game resizes, then rebuild after
+// ============================================================================
+static HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain,
+    UINT bufferCount, UINT width, UINT height, DXGI_FORMAT format, UINT flags) {
+
+    LOG_INFO("ResizeBuffers called: %ux%u", width, height);
+
+    // Release our RTV — the backbuffer is about to be destroyed
+    if (g_rtv) { g_rtv->Release(); g_rtv = nullptr; }
+    g_rtvWidth = 0;
+    g_rtvHeight = 0;
+
+    // Invalidate ImGui's DX11 objects (they reference the old backbuffer size)
+    if (g_imguiInitialized) {
+        ImGui_ImplDX11_InvalidateDeviceObjects();
+    }
+
+    // Let the game do the actual resize
+    HRESULT hr = g_originalResizeBuffers(swapChain, bufferCount, width, height, format, flags);
+
+    // Rebuild our RTV from the new backbuffer
+    if (SUCCEEDED(hr) && g_imguiInitialized) {
+        RebuildRTV(swapChain);
+        ImGui_ImplDX11_CreateDeviceObjects();
+    }
+
+    return hr;
 }
 
 // ============================================================================
@@ -196,20 +231,11 @@ static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT s
         Overlay::GetInstance().ShowNotification("Seamless Co-op loaded  |  INSERT to open menu", 5.0f);
     }
 
-    // --- Fix 2: Rebuild RTV if backbuffer size changed ---
-    {
-        DXGI_SWAP_CHAIN_DESC scDesc{};
-        swapChain->GetDesc(&scDesc);
-        if (scDesc.BufferDesc.Width  != g_rtvWidth ||
-            scDesc.BufferDesc.Height != g_rtvHeight) {
-            // Backbuffer changed — rebuild RTV
-            ImGui_ImplDX11_InvalidateDeviceObjects();
-            RebuildRTV(swapChain);
-            ImGui_ImplDX11_CreateDeviceObjects();
-        }
+    // If RTV was released by ResizeBuffers hook, rebuild it
+    if (!g_rtv) {
+        RebuildRTV(swapChain);
+        if (!g_rtv) return g_originalPresent(swapChain, syncInterval, flags);
     }
-
-    if (!g_rtv) return g_originalPresent(swapChain, syncInterval, flags);
 
     // --- Every frame: render ---
     auto& overlay = Overlay::GetInstance();
@@ -321,15 +347,25 @@ bool OverlayRenderer::Initialize() {
         return false;
     }
 
-    // Slot 8 is IDXGISwapChain::Present in both base and extended interfaces
-    void** vtable     = *reinterpret_cast<void***>(tempSwapChain);
-    void*  presentAddr = vtable[8];
+    // Slot 8 = Present, Slot 13 = ResizeBuffers
+    void** vtable          = *reinterpret_cast<void***>(tempSwapChain);
+    void*  presentAddr     = vtable[8];
+    void*  resizeAddr      = vtable[13];
     LOG_INFO("IDXGISwapChain::Present at %p", presentAddr);
+    LOG_INFO("IDXGISwapChain::ResizeBuffers at %p", resizeAddr);
 
     bool hooked = HookManager::GetInstance().InstallHook(
         presentAddr,
         reinterpret_cast<void*>(&HookedPresent),
         reinterpret_cast<void**>(&g_originalPresent));
+
+    // Hook ResizeBuffers so resolution changes don't break the overlay
+    bool resizeHooked = HookManager::GetInstance().InstallHook(
+        resizeAddr,
+        reinterpret_cast<void*>(&HookedResizeBuffers),
+        reinterpret_cast<void**>(&g_originalResizeBuffers));
+    if (resizeHooked) LOG_INFO("ResizeBuffers hook installed");
+    else LOG_WARNING("ResizeBuffers hook failed — resolution changes may break overlay");
 
     tempSwapChain->Release();
     tempContext->Release();

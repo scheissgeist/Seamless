@@ -226,11 +226,33 @@ namespace Offsets {
 }
 
 // ============================================================================
-// Item IDs
+// Item Give function (from DS2S-META by pseudostripy/Nordgaren)
+// ============================================================================
+namespace ItemGib {
+    // ItemGive function — AOB from DS2S-META DS2REData.cs
+    constexpr const char* ITEM_GIVE_PATTERN =
+        "\x48\x89\x5C\x24\x18\x56\x57\x41\x56\x48\x83\xEC\x30\x45\x8B\xF1\x41";
+    constexpr const char* ITEM_GIVE_MASK =
+        "xxxxxxxxxxxxxxxxx";
+
+    // AvailableItemBag pointer chain from BaseA (GameManagerImp):
+    //   [BaseA] -> +0xA8 -> +0x10 -> +0x10
+    constexpr uint32_t AvailItemBag_Off1 = 0xA8;
+    constexpr uint32_t AvailItemBag_Off2 = 0x10;
+    constexpr uint32_t AvailItemBag_Off3 = 0x10;
+}
+
+// ============================================================================
+// Item IDs and struct
 // ============================================================================
 namespace ItemIDs {
     constexpr uint32_t WhiteSignSoapstone      = 0x03B280B0;
     constexpr uint32_t SmallWhiteSignSoapstone  = 0x03B2A7C0;
+}
+
+// Item category types
+namespace ItemCategory {
+    constexpr int32_t Consumable = 3;
 }
 
 } // namespace Addresses
