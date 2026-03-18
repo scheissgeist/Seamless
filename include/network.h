@@ -4,6 +4,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <mutex>
 
 namespace DS2Coop::Network {
 
@@ -144,6 +145,7 @@ private:
     uint16_t m_port = 27015;
     std::string m_sessionPassword;
     std::vector<PeerInfo> m_peers;
+    mutable std::mutex m_peersMutex;
     void* m_socket = nullptr;
     uint64_t m_lastHeartbeatMs = 0;
     uint64_t m_connectingTimestampMs = 0; // for handshake timeout

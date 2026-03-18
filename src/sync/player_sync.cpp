@@ -152,7 +152,13 @@ void PlayerSync::SyncLocalPlayerPosition() {
     auto& sessionMgr = Session::SessionManager::GetInstance();
     if (!sessionMgr.IsActive()) return;
 
-    auto* localPlayer = sessionMgr.GetLocalPlayer();
+    // Copy local player data under lock to avoid racing with network thread
+    auto players = sessionMgr.GetPlayers();
+    Session::SessionPlayer* localPlayer = nullptr;
+    uint64_t localId = Network::PeerManager::GetInstance().GetLocalPlayerId();
+    for (auto& p : players) {
+        if (p.playerId == localId) { localPlayer = &p; break; }
+    }
     if (!localPlayer) return;
 
     float x = 0, y = 0, z = 0, rotY = 0;
@@ -170,10 +176,12 @@ void PlayerSync::SyncLocalPlayerPosition() {
     }
 
     // Build and broadcast position packet
+    static uint32_t posSequence = 0;
     Network::PlayerPositionPacket packet{};
     packet.header.magic = 0x44533243;
     packet.header.type = Network::PacketType::PlayerPosition;
     packet.header.size = sizeof(Network::PlayerPositionPacket);
+    packet.header.sequence = ++posSequence;
     packet.header.timestamp = std::chrono::system_clock::now().time_since_epoch().count();
     packet.playerId = localPlayer->playerId;
     packet.x = x;
@@ -197,7 +205,12 @@ void PlayerSync::SyncLocalPlayerState() {
     auto& sessionMgr = Session::SessionManager::GetInstance();
     if (!sessionMgr.IsActive()) return;
 
-    auto* localPlayer = sessionMgr.GetLocalPlayer();
+    auto players = sessionMgr.GetPlayers();
+    Session::SessionPlayer* localPlayer = nullptr;
+    uint64_t localId = Network::PeerManager::GetInstance().GetLocalPlayerId();
+    for (auto& p : players) {
+        if (p.playerId == localId) { localPlayer = &p; break; }
+    }
     if (!localPlayer) return;
 
     int32_t health = 0, maxHealth = 0;

@@ -149,14 +149,17 @@ bool PeerManager::JoinSession(const std::string& address, uint16_t port, const s
     }
 
     // Register host as a peer
-    PeerInfo hostPeer{};
-    hostPeer.playerId = 0; // Will be set when host responds
-    hostPeer.playerName = "Host";
-    hostPeer.address = hostAddr.sin_addr.s_addr;
-    hostPeer.port = port;
-    hostPeer.lastHeartbeat = NowMs();
-    hostPeer.connected = true;
-    m_peers.push_back(hostPeer);
+    {
+        std::lock_guard<std::mutex> lock(m_peersMutex);
+        PeerInfo hostPeer{};
+        hostPeer.playerId = 0; // Will be set when host responds
+        hostPeer.playerName = "Host";
+        hostPeer.address = hostAddr.sin_addr.s_addr;
+        hostPeer.port = port;
+        hostPeer.lastHeartbeat = NowMs();
+        hostPeer.connected = true;
+        m_peers.push_back(hostPeer);
+    }
 
     m_isHost = false;
     m_connected = true;
@@ -182,7 +185,10 @@ void PeerManager::LeaveSession() {
 
     BroadcastPacket(&disconnectPacket);
 
-    m_peers.clear();
+    {
+        std::lock_guard<std::mutex> lock(m_peersMutex);
+        m_peers.clear();
+    }
     m_connected = false;
     m_isHost = false;
     m_sessionPassword.clear();
@@ -193,6 +199,7 @@ void PeerManager::LeaveSession() {
 void PeerManager::Update() {
     if (!m_initialized || !m_connected) return;
 
+    std::lock_guard<std::mutex> lock(m_peersMutex);
     HandleIncomingPackets();
     SendHeartbeats();
     CheckTimeouts();
@@ -212,6 +219,7 @@ void PeerManager::Update() {
 bool PeerManager::SendPacket(const PacketHeader* packet, uint64_t targetPlayerId) {
     if (!m_initialized || !m_connected || !packet) return false;
 
+    std::lock_guard<std::mutex> lock(m_peersMutex);
     SOCKET sock = reinterpret_cast<SOCKET>(m_socket);
 
     for (const auto& peer : m_peers) {
@@ -234,6 +242,7 @@ bool PeerManager::SendPacket(const PacketHeader* packet, uint64_t targetPlayerId
 void PeerManager::BroadcastPacket(const PacketHeader* packet) {
     if (!m_initialized || !m_connected || !packet) return;
 
+    std::lock_guard<std::mutex> lock(m_peersMutex);
     SOCKET sock = reinterpret_cast<SOCKET>(m_socket);
 
     for (const auto& peer : m_peers) {

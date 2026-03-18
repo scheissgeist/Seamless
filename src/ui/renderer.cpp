@@ -49,6 +49,7 @@ namespace DS2Coop::UI {
 // State
 // ============================================================================
 static bool                    g_imguiInitialized = false;
+static bool                    g_shuttingDown     = false;
 static ID3D11Device*           g_device           = nullptr;
 static ID3D11DeviceContext*    g_context          = nullptr;
 static ID3D11RenderTargetView* g_rtv              = nullptr;
@@ -151,6 +152,8 @@ static HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain,
 // Hooked Present
 // ============================================================================
 static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
+    // Don't touch ImGui if we're shutting down
+    if (g_shuttingDown) return g_originalPresent(swapChain, syncInterval, flags);
 
     // --- One-time init on first real Present call ---
     if (!g_imguiInitialized) {
@@ -383,6 +386,9 @@ bool OverlayRenderer::Initialize() {
 
 void OverlayRenderer::Shutdown() {
     if (!m_initialized) return;
+
+    g_shuttingDown = true;
+    Sleep(100); // Give render thread time to exit HookedPresent
 
     if (g_imguiInitialized) {
         if (g_hwnd && g_originalWndProc)

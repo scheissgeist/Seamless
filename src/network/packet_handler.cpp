@@ -6,6 +6,7 @@
 #include "../../include/session.h"
 #include "../../include/sync.h"
 #include "../../include/utils.h"
+#include <unordered_map>
 
 using namespace DS2Coop::Network;
 using namespace DS2Coop::Utils;
@@ -92,11 +93,18 @@ void PacketHandler::HandleHandshake(const HandshakePacket* packet, const PeerInf
     sessionMgr.AddPlayer(packet->playerId, packet->playerName);
 }
 
+// Track last sequence per player to discard out-of-order UDP packets
+static std::unordered_map<uint64_t, uint32_t> g_lastPosSequence;
+
 void PacketHandler::HandlePlayerPosition(const PlayerPositionPacket* packet) {
     if (!packet) return;
 
-    LOG_DEBUG("Player %llu position: (%.2f, %.2f, %.2f)",
-              packet->playerId, packet->x, packet->y, packet->z);
+    // Drop out-of-order packets
+    uint32_t& lastSeq = g_lastPosSequence[packet->playerId];
+    if (packet->header.sequence < lastSeq && lastSeq - packet->header.sequence < 1000) {
+        return; // old packet, discard
+    }
+    lastSeq = packet->header.sequence;
 
     auto& sessionMgr = DS2Coop::Session::SessionManager::GetInstance();
     sessionMgr.UpdatePlayerPosition(packet->playerId, packet->x, packet->y, packet->z);
