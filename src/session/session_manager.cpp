@@ -72,8 +72,10 @@ bool SessionManager::CreateSession(const std::string& password) {
     localPlayer.maxHealth = 0;
     localPlayer.x = localPlayer.y = localPlayer.z = 0.0f;
 
-    m_players.push_back(localPlayer);
-    m_playerMap[localPlayer.playerId] = &m_players.back();
+    {
+        std::lock_guard<std::mutex> lock(m_playersMutex);
+        m_players.push_back(localPlayer);
+    }
 
     // Initialize sync systems
     Sync::PlayerSync::GetInstance().Initialize();
@@ -125,8 +127,10 @@ bool SessionManager::JoinSession(const std::string& address, const std::string& 
     localPlayer.maxHealth = 0;
     localPlayer.x = localPlayer.y = localPlayer.z = 0.0f;
 
-    m_players.push_back(localPlayer);
-    m_playerMap[localPlayer.playerId] = &m_players.back();
+    {
+        std::lock_guard<std::mutex> lock(m_playersMutex);
+        m_players.push_back(localPlayer);
+    }
 
     // Initialize sync systems
     Sync::PlayerSync::GetInstance().Initialize();
@@ -149,7 +153,7 @@ void SessionManager::LeaveSession() {
 
     // Clear players
     m_players.clear();
-    m_playerMap.clear();
+    // m_playerMap removed — using linear search now
 
     TransitionToState(SessionState::Disconnected);
 
@@ -173,13 +177,16 @@ void SessionManager::Update(float deltaTime) {
 // ============================================================================
 
 void SessionManager::AddPlayer(uint64_t playerId, const std::string& name) {
-    // Don't add ourselves
     if (playerId == m_localPlayerId) return;
 
+    std::lock_guard<std::mutex> lock(m_playersMutex);
+
     // Don't add duplicates
-    if (m_playerMap.find(playerId) != m_playerMap.end()) {
-        LOG_DEBUG("Player %llu already in session", playerId);
-        return;
+    for (const auto& p : m_players) {
+        if (p.playerId == playerId) {
+            LOG_DEBUG("Player %llu already in session", playerId);
+            return;
+        }
     }
 
     SessionPlayer newPlayer{};
@@ -193,18 +200,18 @@ void SessionManager::AddPlayer(uint64_t playerId, const std::string& name) {
     newPlayer.x = newPlayer.y = newPlayer.z = 0.0f;
 
     m_players.push_back(newPlayer);
-    m_playerMap[playerId] = &m_players.back();
 
     LOG_INFO("Player joined session: %s (ID: %llu) [Total: %zu players]",
              name.c_str(), playerId, m_players.size());
 }
 
 void SessionManager::RemovePlayer(uint64_t playerId) {
-    auto it = m_playerMap.find(playerId);
-    if (it == m_playerMap.end()) return;
+    std::lock_guard<std::mutex> lock(m_playersMutex);
 
-    std::string name = it->second->playerName;
-    m_playerMap.erase(it);
+    std::string name;
+    for (const auto& p : m_players) {
+        if (p.playerId == playerId) { name = p.playerName; break; }
+    }
 
     m_players.erase(
         std::remove_if(m_players.begin(), m_players.end(),
@@ -217,8 +224,11 @@ void SessionManager::RemovePlayer(uint64_t playerId) {
 }
 
 SessionPlayer* SessionManager::GetPlayer(uint64_t playerId) {
-    auto it = m_playerMap.find(playerId);
-    return (it != m_playerMap.end()) ? it->second : nullptr;
+    // Caller must hold m_playersMutex or be on the update thread
+    for (auto& p : m_players) {
+        if (p.playerId == playerId) return &p;
+    }
+    return nullptr;
 }
 
 SessionPlayer* SessionManager::GetLocalPlayer() {
@@ -226,6 +236,7 @@ SessionPlayer* SessionManager::GetLocalPlayer() {
 }
 
 void SessionManager::UpdatePlayerPosition(uint64_t playerId, float x, float y, float z) {
+    std::lock_guard<std::mutex> lock(m_playersMutex);
     SessionPlayer* player = GetPlayer(playerId);
     if (player) {
         player->x = x;
@@ -235,6 +246,7 @@ void SessionManager::UpdatePlayerPosition(uint64_t playerId, float x, float y, f
 }
 
 void SessionManager::UpdatePlayerHealth(uint64_t playerId, int32_t health, int32_t maxHealth) {
+    std::lock_guard<std::mutex> lock(m_playersMutex);
     SessionPlayer* player = GetPlayer(playerId);
     if (player) {
         player->health = health;
@@ -244,6 +256,7 @@ void SessionManager::UpdatePlayerHealth(uint64_t playerId, int32_t health, int32
 }
 
 void SessionManager::NotifyPlayerDeath(uint64_t playerId) {
+    std::lock_guard<std::mutex> lock(m_playersMutex);
     SessionPlayer* player = GetPlayer(playerId);
     if (player) {
         player->isAlive = false;
@@ -261,6 +274,7 @@ void SessionManager::NotifyPlayerDeath(uint64_t playerId) {
 }
 
 void SessionManager::NotifyPlayerRespawn(uint64_t playerId) {
+    std::lock_guard<std::mutex> lock(m_playersMutex);
     SessionPlayer* player = GetPlayer(playerId);
     if (player) {
         player->isAlive = true;

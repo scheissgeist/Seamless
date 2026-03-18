@@ -251,7 +251,7 @@ void Overlay::RenderMainMenu() {
         ImGui::TextDisabled("Status");
         ImGui::Separator();
 
-        auto& players = sessionMgr.GetPlayers();
+        auto players = sessionMgr.GetPlayers();
         uint32_t blocked = DS2Coop::Hooks::ProtobufHooks::GetBlockedMessageCount();
 
         ImGui::Text("Role: %s", sessionMgr.IsHost() ? "HOST" : "CLIENT");

@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <string>
 #include <vector>
-#include <unordered_map>
+#include <mutex>
 
 namespace DS2Coop::Session {
 
@@ -46,7 +46,10 @@ public:
     bool IsActive() const { return m_state == SessionState::Connected || m_state == SessionState::InGame; }
     bool IsHost() const { return m_isHost; }
     
-    const std::vector<SessionPlayer>& GetPlayers() const { return m_players; }
+    std::vector<SessionPlayer> GetPlayers() const {
+        std::lock_guard<std::mutex> lock(m_playersMutex);
+        return m_players; // returns a copy — safe for render thread
+    }
     SessionPlayer* GetPlayer(uint64_t playerId);
     SessionPlayer* GetLocalPlayer();
 
@@ -83,7 +86,7 @@ private:
     uint64_t m_localPlayerId = 0;
     std::string m_sessionPassword;
     std::vector<SessionPlayer> m_players;
-    std::unordered_map<uint64_t, SessionPlayer*> m_playerMap;
+    mutable std::mutex m_playersMutex; // protects m_players from concurrent access
 };
 
 } // namespace DS2Coop::Session

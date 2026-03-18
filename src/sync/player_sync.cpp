@@ -116,25 +116,32 @@ static bool ReadPlayerStamina(float& stamina) {
 void PlayerSync::Update(float deltaTime) {
     if (!m_initialized) return;
 
-    m_positionSyncTimer += deltaTime;
-    m_stateSyncTimer += deltaTime;
-    m_phantomTimerRefresh += deltaTime;
+    __try {
+        m_positionSyncTimer += deltaTime;
+        m_stateSyncTimer += deltaTime;
+        m_phantomTimerRefresh += deltaTime;
 
-    if (m_positionSyncTimer >= POSITION_SYNC_INTERVAL) {
-        SyncLocalPlayerPosition();
-        m_positionSyncTimer = 0.0f;
+        if (m_positionSyncTimer >= POSITION_SYNC_INTERVAL) {
+            SyncLocalPlayerPosition();
+            m_positionSyncTimer = 0.0f;
+        }
+
+        if (m_stateSyncTimer >= STATE_SYNC_INTERVAL) {
+            SyncLocalPlayerState();
+            m_stateSyncTimer = 0.0f;
+        }
+
+        // Silently keep phantom timer maxed (every 2 seconds)
+        if (m_phantomTimerRefresh >= 2.0f) {
+            MaxPhantomTimer();
+            EnableSummoning();
+            m_phantomTimerRefresh = 0.0f;
+        }
     }
-
-    if (m_stateSyncTimer >= STATE_SYNC_INTERVAL) {
-        SyncLocalPlayerState();
-        m_stateSyncTimer = 0.0f;
-    }
-
-    // Silently keep phantom timer maxed and summoning enabled (every 2 seconds)
-    if (m_phantomTimerRefresh >= 2.0f) {
-        MaxPhantomTimer();
-        EnableSummoning();
-        m_phantomTimerRefresh = 0.0f;
+    __except (EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERROR("PlayerSync::Update CRASHED (exception 0x%08X) — disabling sync",
+                  GetExceptionCode());
+        m_initialized = false;
     }
 }
 
@@ -306,13 +313,24 @@ static bool ResolveItemGive(uintptr_t& outBag) {
     // Resolve AvailableItemBag: [BaseA] -> +0xA8 -> +0x10 -> +0x10
     auto& resolver = DS2Coop::AddressResolver::GetInstance();
     uintptr_t baseA = resolver.GetGameManagerImp();
-    if (!baseA) return false;
+    if (!baseA) { LOG_WARNING("ResolveItemGive: BaseA is null"); return false; }
 
     uintptr_t ptr1 = 0, ptr2 = 0, bag = 0;
-    if (!Memory::Read<uintptr_t>(baseA + ItemGib::AvailItemBag_Off1, &ptr1) || !ptr1) return false;
-    if (!Memory::Read<uintptr_t>(ptr1 + ItemGib::AvailItemBag_Off2, &ptr2) || !ptr2) return false;
-    if (!Memory::Read<uintptr_t>(ptr2 + ItemGib::AvailItemBag_Off3, &bag) || !bag) return false;
+    if (!Memory::Read<uintptr_t>(baseA + ItemGib::AvailItemBag_Off1, &ptr1) || !ptr1) {
+        LOG_WARNING("ResolveItemGive: ptr1 failed (BaseA=%p +0x%X)", (void*)baseA, ItemGib::AvailItemBag_Off1);
+        return false;
+    }
+    if (!Memory::Read<uintptr_t>(ptr1 + ItemGib::AvailItemBag_Off2, &ptr2) || !ptr2) {
+        LOG_WARNING("ResolveItemGive: ptr2 failed (ptr1=%p +0x%X)", (void*)ptr1, ItemGib::AvailItemBag_Off2);
+        return false;
+    }
+    if (!Memory::Read<uintptr_t>(ptr2 + ItemGib::AvailItemBag_Off3, &bag) || !bag) {
+        LOG_WARNING("ResolveItemGive: bag failed (ptr2=%p +0x%X)", (void*)ptr2, ItemGib::AvailItemBag_Off3);
+        return false;
+    }
 
+    LOG_INFO("ResolveItemGive: BaseA=%p -> ptr1=%p -> ptr2=%p -> bag=%p",
+             (void*)baseA, (void*)ptr1, (void*)ptr2, (void*)bag);
     outBag = bag;
     return true;
 }
@@ -346,13 +364,24 @@ bool PlayerSync::GrantSoapstones() {
     items[1].upgrade    = 0;
     items[1].infusion   = 0;
 
+    LOG_INFO("GrantSoapstones: calling ItemGive at %p with bag=%p, 2 items",
+             reinterpret_cast<void*>(g_itemGiveFunc), reinterpret_cast<void*>(bag));
+
     __try {
-        g_itemGiveFunc(reinterpret_cast<void*>(bag), items, 2, 0);
-        LOG_INFO("GrantSoapstones: gave 2 soapstones via ItemGive");
+        // Give items one at a time to isolate which one crashes (if any)
+        g_itemGiveFunc(reinterpret_cast<void*>(bag), &items[0], 1, 0);
+        LOG_INFO("GrantSoapstones: White Sign Soapstone given");
+
+        g_itemGiveFunc(reinterpret_cast<void*>(bag), &items[1], 1, 0);
+        LOG_INFO("GrantSoapstones: Small White Sign Soapstone given");
+
         return true;
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {
-        LOG_ERROR("GrantSoapstones: ItemGive crashed — wrong address or bad pointer chain");
+        LOG_ERROR("GrantSoapstones: ItemGive crashed (exception 0x%08X)",
+                  GetExceptionCode());
+        // Disable further attempts
+        g_itemGiveFunc = nullptr;
         return false;
     }
 }
@@ -393,14 +422,6 @@ bool PlayerSync::MaxPhantomTimer() {
 // Only runs while seamless mode is active.
 // ============================================================================
 void PlayerSync::EnableSummoning() {
-    if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
-
-    uintptr_t playerData = 0;
-    if (!ReadPlayerDataBase(playerData)) return;
-
-    uint8_t hollowing = 0;
-    if (Memory::Read<uint8_t>(playerData + Offsets::GameManager::Hollowing, &hollowing) && hollowing != 0) {
-        Memory::Write<uint8_t>(playerData + Offsets::GameManager::Hollowing, (uint8_t)0);
-        LOG_DEBUG("EnableSummoning: cleared hollowing (was %u)", hollowing);
-    }
+    // Disabled for now — needs verified hollowing offset
+    // The offset 0x1AC may be wrong and could crash the game
 }
