@@ -198,6 +198,10 @@ namespace Offsets {
         constexpr uint32_t LastBonfire = 0x16C;
         constexpr uint32_t Hollowing = 0x1AC;
 
+        // Inventory (from PlayerData base)
+        constexpr uint32_t InventoryBase = 0x12EC;
+        constexpr uint32_t InventorySlotSize = 0x8;
+
         // Stats block (PlayerData + 0x490)
         constexpr uint32_t Stats = 0x490;
         constexpr uint32_t Vigor = Stats + 0x8;
@@ -219,6 +223,14 @@ namespace Offsets {
         constexpr uint32_t AllottedTime = 0x17C;
         constexpr uint32_t PhantomType = 0x1F4;
     }
+}
+
+// ============================================================================
+// Item IDs
+// ============================================================================
+namespace ItemIDs {
+    constexpr uint32_t WhiteSignSoapstone      = 0x03B280B0;
+    constexpr uint32_t SmallWhiteSignSoapstone  = 0x03B2A7C0;
 }
 
 } // namespace Addresses

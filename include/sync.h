@@ -73,6 +73,10 @@ public:
     // Equipment synchronization
     void SyncEquipment(uint64_t playerId);
 
+    // Seamless helpers — grant items and extend phantom timer
+    bool GrantSoapstones();
+    bool MaxPhantomTimer();
+
 private:
     PlayerSync() = default;
     ~PlayerSync() = default;

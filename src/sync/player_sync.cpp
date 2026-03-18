@@ -251,3 +251,89 @@ void PlayerSync::SyncAnimation(uint64_t playerId, uint32_t animationId) {
 void PlayerSync::SyncEquipment(uint64_t playerId) {
     LOG_DEBUG("Equipment sync for player %llu", playerId);
 }
+
+// ============================================================================
+// Grant White Sign Soapstone + Small White Sign Soapstone
+// Scans inventory for empty slots and writes item IDs
+// ============================================================================
+bool PlayerSync::GrantSoapstones() {
+    uintptr_t playerData = 0;
+    if (!ReadPlayerDataBase(playerData)) {
+        LOG_ERROR("GrantSoapstones: could not read PlayerData base");
+        return false;
+    }
+
+    uintptr_t invBase = playerData + Offsets::GameManager::InventoryBase;
+    uint32_t itemsToGrant[] = {
+        Addresses::ItemIDs::WhiteSignSoapstone,
+        Addresses::ItemIDs::SmallWhiteSignSoapstone
+    };
+
+    for (uint32_t itemId : itemsToGrant) {
+        // Check if player already has this item (scan first 256 slots)
+        bool alreadyHas = false;
+        for (int i = 0; i < 256; i++) {
+            uint32_t slotItem = 0;
+            if (Memory::Read<uint32_t>(invBase + i * Offsets::GameManager::InventorySlotSize, &slotItem)) {
+                if (slotItem == itemId) {
+                    alreadyHas = true;
+                    break;
+                }
+            }
+        }
+
+        if (alreadyHas) {
+            LOG_INFO("GrantSoapstones: player already has item 0x%08X", itemId);
+            continue;
+        }
+
+        // Find first empty slot (item ID == 0)
+        bool granted = false;
+        for (int i = 0; i < 256; i++) {
+            uint32_t slotItem = 0;
+            uintptr_t slotAddr = invBase + i * Offsets::GameManager::InventorySlotSize;
+            if (Memory::Read<uint32_t>(slotAddr, &slotItem) && slotItem == 0) {
+                if (Memory::Write<uint32_t>(slotAddr, itemId)) {
+                    LOG_INFO("GrantSoapstones: wrote item 0x%08X to slot %d", itemId, i);
+                    granted = true;
+                    break;
+                }
+            }
+        }
+
+        if (!granted) {
+            LOG_WARNING("GrantSoapstones: could not find empty slot for 0x%08X", itemId);
+        }
+    }
+
+    return true;
+}
+
+// ============================================================================
+// Max out phantom AllottedTime so the summon never expires
+// ============================================================================
+bool PlayerSync::MaxPhantomTimer() {
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    uintptr_t netSession = resolver.GetNetSessionManager();
+    if (!netSession) {
+        LOG_ERROR("MaxPhantomTimer: NetSessionManager not resolved");
+        return false;
+    }
+
+    // NetSessionManager -> +0x18 (SessionPointer) -> +0x17C (AllottedTime)
+    uintptr_t sessionPtr = 0;
+    if (!Memory::Read<uintptr_t>(netSession + Offsets::NetSession::SessionPointer, &sessionPtr) || !sessionPtr) {
+        LOG_WARNING("MaxPhantomTimer: no active session pointer");
+        return false;
+    }
+
+    // Set AllottedTime to a huge value (float, in seconds)
+    float maxTime = 99999.0f;
+    if (Memory::Write<float>(sessionPtr + Offsets::NetSession::AllottedTime, maxTime)) {
+        LOG_INFO("MaxPhantomTimer: AllottedTime set to %.0f", maxTime);
+        return true;
+    }
+
+    LOG_ERROR("MaxPhantomTimer: failed to write AllottedTime");
+    return false;
+}

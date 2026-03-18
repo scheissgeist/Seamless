@@ -22,6 +22,7 @@
 #include "../../include/session.h"
 #include "../../include/network.h"
 #include "../../include/hooks.h"
+#include "../../include/sync.h"
 #include "../../include/utils.h"
 
 #include <sstream>
@@ -270,6 +271,30 @@ void Overlay::RenderMainMenu() {
             if (p.maxHealth > 0) {
                 ImGui::SameLine();
                 ImGui::TextDisabled("  HP %d/%d", p.health, p.maxHealth);
+            }
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        // Seamless tools
+        ImGui::TextDisabled("Tools");
+        ImGui::Separator();
+
+        if (ImGui::Button("Grant Soapstones", ImVec2(-1, 0))) {
+            if (DS2Coop::Sync::PlayerSync::GetInstance().GrantSoapstones()) {
+                ShowNotification("Soapstones granted! Check your inventory.", 4.0f);
+            } else {
+                ShowNotification("Could not grant items. Are you in-game?", 4.0f);
+            }
+        }
+
+        if (ImGui::Button("Max Phantom Timer", ImVec2(-1, 0))) {
+            if (DS2Coop::Sync::PlayerSync::GetInstance().MaxPhantomTimer()) {
+                ShowNotification("Phantom timer maxed! Summon won't expire.", 4.0f);
+            } else {
+                ShowNotification("No active phantom session to extend.", 4.0f);
             }
         }
 
