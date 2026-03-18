@@ -18,6 +18,7 @@
 #include "../../include/address_resolver.h"
 #include <fstream>
 #include <chrono>
+#include <utility>
 
 using namespace DS2Coop;
 using namespace DS2Coop::Utils;
@@ -90,21 +91,56 @@ bool SeamlessCoopMod::Initialize() {
     }
 
     // ================================================================
-    // STEP 4: Install Winsock hooks (connection monitoring)
+    // STEP 4: Install Winsock hooks + server redirect
     // ================================================================
-    LOG_INFO("[4/6] Installing Winsock hooks...");
+    LOG_INFO("[4/7] Installing Winsock hooks...");
     Hooks::WinsockHooks::InstallHooks();
+
+    if (m_config.use_custom_server) {
+        LOG_INFO("[4/7] Setting up server redirect to %s:%u...",
+                 m_config.server_ip.c_str(), m_config.server_port);
+
+        // Configure the Winsock hook to redirect port 50031
+        Hooks::WinsockHooks::SetServerRedirect(m_config.server_ip, m_config.server_port);
+
+        // Find the public key file — check next to the DLL, then in server dir
+        std::string keyPath = "ds2_server_public.key";
+        std::ifstream testKey(keyPath);
+        if (!testKey.good()) {
+            // Try relative to common locations
+            keyPath = "Saved/default/public.key";
+            testKey.open(keyPath);
+        }
+        if (!testKey.good()) {
+            LOG_WARNING("[4/7] No public key file found — RSA patching will be skipped");
+            LOG_WARNING("[4/7] Place ds2_server_public.key in game folder for server auth");
+            // Still patch hostname even without key — server may work without RSA
+            Hooks::ServerRedirect::PatchHostname(m_config.server_ip);
+        } else {
+            testKey.close();
+            // Run hostname + RSA patching in a background thread
+            // (needs to wait for SteamStub to unpack)
+            std::string ip = m_config.server_ip;
+            std::string kp = keyPath;
+            CreateThread(nullptr, 0, [](LPVOID param) -> DWORD {
+                auto* args = static_cast<std::pair<std::string, std::string>*>(param);
+                Hooks::ServerRedirect::Install(args->first, args->second);
+                delete args;
+                return 0;
+            }, new std::pair<std::string, std::string>(ip, kp), 0, nullptr);
+        }
+    }
 
     // ================================================================
     // STEP 5: Install game state hooks (optional local event detection)
     // ================================================================
-    LOG_INFO("[5/6] Installing game state hooks...");
+    LOG_INFO("[5/7] Installing game state hooks...");
     Hooks::GameState::InstallHooks();
 
     // ================================================================
     // STEP 6: Initialize subsystems
     // ================================================================
-    LOG_INFO("[6/6] Initializing subsystems...");
+    LOG_INFO("[6/7] Initializing subsystems...");
 
     // Network manager (our P2P layer)
     if (!Network::PeerManager::GetInstance().Initialize(m_config.port)) {
@@ -284,6 +320,12 @@ void SeamlessCoopMod::LoadConfig() {
                     m_config.sync_items = (value == "true" || value == "1");
                 } else if (key == "sync_enemies") {
                     m_config.sync_enemies = (value == "true" || value == "1");
+                } else if (key == "server_ip") {
+                    m_config.server_ip = value;
+                } else if (key == "server_port") {
+                    m_config.server_port = static_cast<uint16_t>(std::stoi(value));
+                } else if (key == "use_custom_server") {
+                    m_config.use_custom_server = (value == "true" || value == "1");
                 }
             }
         }
@@ -312,6 +354,10 @@ void SeamlessCoopMod::SaveConfig() {
         configFile << "sync_bonfires=" << (m_config.sync_bonfires ? "true" : "false") << "\n";
         configFile << "sync_items=" << (m_config.sync_items ? "true" : "false") << "\n";
         configFile << "sync_enemies=" << (m_config.sync_enemies ? "true" : "false") << "\n";
+        configFile << "\n# Custom server settings\n";
+        configFile << "use_custom_server=" << (m_config.use_custom_server ? "true" : "false") << "\n";
+        configFile << "server_ip=" << m_config.server_ip << "\n";
+        configFile << "server_port=" << m_config.server_port << "\n";
         configFile.close();
     }
 }

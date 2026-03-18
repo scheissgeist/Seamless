@@ -31,3 +31,4 @@ Release/*.dll
 
 .claude/
 *.zip
+third_party/ds3os

@@ -78,12 +78,27 @@ namespace ProtobufHooks {
 }
 
 // ============================================================================
-// Winsock Hooks (connection monitoring)
-// Hooks Winsock connect() to detect when the game connects to FromSoft servers.
+// Winsock Hooks (connection monitoring + server redirect)
+// Hooks Winsock connect() to detect and redirect game server connections.
 // ============================================================================
 namespace WinsockHooks {
     bool InstallHooks();
     void UninstallHooks();
+
+    // Server redirect configuration
+    void SetServerRedirect(const std::string& ip, uint16_t port);
+    bool IsRedirectActive();
+}
+
+// ============================================================================
+// Server Redirect (hostname + RSA key patching in game memory)
+// Patches the FromSoft server hostname and RSA public key so the game
+// connects to our custom ds3os server instead.
+// ============================================================================
+namespace ServerRedirect {
+    bool PatchHostname(const std::string& newHostname);
+    bool PatchRSAKey(const std::string& newPublicKey);
+    bool Install(const std::string& serverIp, const std::string& publicKeyPath);
 }
 
 // ============================================================================
