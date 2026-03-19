@@ -32,3 +32,17 @@ Release/*.dll
 .claude/
 *.zip
 third_party/ds3os
+
+# Secrets — NEVER commit private keys
+private.key
+*.pem
+
+# Server runtime data
+*.sqlite
+*.time
+server/Saved/default/private.key
+server/Saved/default/database.sqlite
+server/Saved/default/last_activity.time
+Release/Server/Saved/default/private.key
+Release/Server/Saved/default/database.sqlite
+Release/Server/Saved/default/last_activity.time
