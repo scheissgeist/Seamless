@@ -185,26 +185,26 @@ static const char* GetRttiClassName(void* obj) {
 // Check if a message class name corresponds to a disconnect/leave message
 // ============================================================================
 // Messages to block when SENDING (outgoing — serialize hook)
-// Only block DisconnectSession — this is the forced disconnect after boss kills.
-// LeaveSession and LeaveGuestPlayer must go through or the crystal/quit crashes.
+// Block forced disconnects. Allow the serialize to happen (so the game's
+// state machine progresses) but we intercept at serialize level.
 static bool IsOutgoingDisconnect(const char* className) {
     if (!className) return false;
     if (strstr(className, "DisconnectSession")) return true;
+    if (strstr(className, "LeaveGuestPlayer")) return true;
     return false;
 }
 
 // Messages to block when RECEIVING (incoming — parse hook)
-// Block server-initiated disconnects (boss kill, death, timeout).
-// Do NOT block ReturnToOwnWorld — that's the Black Separation Crystal
-// and blocking it crashes the game's session teardown state machine.
+// Block server-initiated disconnects that would kick remaining players
+// when one player leaves via crystal.
 static bool IsIncomingDisconnect(const char* className) {
     if (!className) return false;
     if (strstr(className, "DisconnectSession")) return true;
     if (strstr(className, "LeaveGuestPlayer")) return true;
+    if (strstr(className, "LeaveSession")) return true;
     if (strstr(className, "BanishPlayer")) return true;
     if (strstr(className, "BreakInTarget")) return true;
-    // LeaveSession, ReturnToOwnWorld, RemovePlayer — allowed through
-    // These are responses to player-initiated actions (crystal, menu quit)
+    if (strstr(className, "RemovePlayer")) return true;
     return false;
 }
 
