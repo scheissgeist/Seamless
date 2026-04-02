@@ -185,12 +185,11 @@ static const char* GetRttiClassName(void* obj) {
 // Check if a message class name corresponds to a disconnect/leave message
 // ============================================================================
 // Messages to block when SENDING (outgoing — serialize hook)
-// Block forced disconnects. Allow the serialize to happen (so the game's
-// state machine progresses) but we intercept at serialize level.
+// Don't block ANY outgoing messages — let them serialize and send normally.
+// Blocking outgoing messages corrupts the server's session state.
+// All disconnect prevention happens on the RECEIVING side (parse hook).
 static bool IsOutgoingDisconnect(const char* className) {
-    if (!className) return false;
-    if (strstr(className, "DisconnectSession")) return true;
-    if (strstr(className, "LeaveGuestPlayer")) return true;
+    (void)className;
     return false;
 }
 
