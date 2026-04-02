@@ -538,6 +538,36 @@ void PlayerSync::EnableSummoning() {
                     LOG_INFO("EnableSummoning: set PhantomType to Normal (was %u)", phantomType);
                 }
             }
+
+            // Zero the phantom/guest count so the game allows bonfire resting,
+            // NPC interaction, fog wall entry, etc. while in co-op.
+            // The game checks "if phantomCount > 0, block interaction."
+            // Try multiple known offsets for the phantom count field:
+            for (uint32_t countOff : { 0x24u, 0x28u, 0x1E0u, 0x1E4u, 0x1E8u, 0x1ECu }) {
+                int32_t count = 0;
+                if (Memory::Read<int32_t>(sessionPtr + countOff, &count)) {
+                    if (count > 0 && count <= 5) {
+                        Memory::Write<int32_t>(sessionPtr + countOff, 0);
+                    }
+                }
+            }
+        }
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+
+    // Also try zeroing phantom count via GameManagerImp pointer chains
+    __try {
+        // GameManagerImp -> +0x10 -> NetPlayerManager -> phantom count fields
+        uintptr_t netPlayerMgr = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0x10, &netPlayerMgr) && netPlayerMgr) {
+            for (uint32_t off : { 0x38u, 0x3Cu, 0x40u, 0x44u, 0x48u, 0x50u, 0x58u }) {
+                int32_t val = 0;
+                if (Memory::Read<int32_t>(netPlayerMgr + off, &val)) {
+                    // Phantom count is typically 1-5
+                    if (val > 0 && val <= 5) {
+                        Memory::Write<int32_t>(netPlayerMgr + off, 0);
+                    }
+                }
+            }
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
