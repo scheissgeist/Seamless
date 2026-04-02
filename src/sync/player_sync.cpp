@@ -203,7 +203,7 @@ void PlayerSync::SyncLocalPlayerPosition() {
         x = localPlayer->x;
         y = localPlayer->y;
         z = localPlayer->z;
-        LOG_DEBUG("Could not read player position from game memory, using cached");
+        //LOG_DEBUG("Could not read player position from game memory, using cached");
     }
 
     // Build and broadcast position packet
@@ -226,7 +226,7 @@ void PlayerSync::SyncLocalPlayerPosition() {
     auto& peerMgr = Network::PeerManager::GetInstance();
     peerMgr.BroadcastPacket(&packet.header);
 
-    LOG_DEBUG("Synced position: (%.2f, %.2f, %.2f)", x, y, z);
+    //LOG_DEBUG("Synced position: (%.2f, %.2f, %.2f)", x, y, z);
 }
 
 // ============================================================================
@@ -283,7 +283,7 @@ void PlayerSync::SyncLocalPlayerState() {
     auto& peerMgr = Network::PeerManager::GetInstance();
     peerMgr.BroadcastPacket(&packet.header);
 
-    LOG_DEBUG("Synced state: HP %d/%d, SL %u", health, maxHealth, soulLevel);
+    //LOG_DEBUG("Synced state: HP %d/%d, SL %u", health, maxHealth, soulLevel);
 }
 
 // ============================================================================
@@ -292,14 +292,14 @@ void PlayerSync::SyncLocalPlayerState() {
 
 void PlayerSync::ApplyRemotePlayerPosition(uint64_t playerId, float x, float y, float z,
                                            float rotX, float rotY, float rotZ) {
-    LOG_DEBUG("Remote player %llu position: (%.2f, %.2f, %.2f)", playerId, x, y, z);
+    //LOG_DEBUG("Remote player position: (%.2f, %.2f, %.2f)", playerId, x, y, z);
     auto& sessionMgr = Session::SessionManager::GetInstance();
     sessionMgr.UpdatePlayerPosition(playerId, x, y, z);
 }
 
 void PlayerSync::ApplyRemotePlayerState(uint64_t playerId, int32_t health, int32_t maxHealth,
                                         int32_t stamina, int32_t maxStamina) {
-    LOG_DEBUG("Remote player %llu state: HP %d/%d", playerId, health, maxHealth);
+    //LOG_DEBUG("Remote player state: HP %d/%d", playerId, health, maxHealth);
     auto& sessionMgr = Session::SessionManager::GetInstance();
     sessionMgr.UpdatePlayerHealth(playerId, health, maxHealth);
 }
