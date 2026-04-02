@@ -185,13 +185,11 @@ static const char* GetRttiClassName(void* obj) {
 // Check if a message class name corresponds to a disconnect/leave message
 // ============================================================================
 // Messages to block when SENDING (outgoing — serialize hook)
-// Block ALL disconnect/leave messages. This is aggressive but necessary —
-// the game sends these after boss kills, deaths, and area transitions.
+// Only block DisconnectSession — this is the forced disconnect after boss kills.
+// LeaveSession and LeaveGuestPlayer must go through or the crystal/quit crashes.
 static bool IsOutgoingDisconnect(const char* className) {
     if (!className) return false;
     if (strstr(className, "DisconnectSession")) return true;
-    if (strstr(className, "LeaveSession")) return true;
-    if (strstr(className, "LeaveGuestPlayer")) return true;
     return false;
 }
 
