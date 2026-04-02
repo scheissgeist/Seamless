@@ -51,19 +51,19 @@ static int WSAAPI ConnectHook(SOCKET s, const sockaddr* name, int namelen) {
 
         LOG_INFO("[NET] Game connecting to %s:%u", ipStr, port);
 
-        // Redirect login server connections
-        if (port == DS2_LOGIN_PORT && g_redirectActive) {
-            LOG_INFO("[NET] REDIRECTING from FromSoft server to custom server %s:%u",
-                     g_redirectIP.c_str(), g_redirectPort);
+        // Redirect all game server connections (login=50031, auth=50000, game=50010+)
+        if (g_redirectActive && (port == DS2_LOGIN_PORT || port == 50000 ||
+            (port >= 50010 && port <= 50100))) {
+            LOG_INFO("[NET] REDIRECTING %s:%u to custom server %s:%u (keeping port)",
+                     ipStr, port, g_redirectIP.c_str(), port);
 
-            // Rewrite destination IP
+            // Rewrite destination IP only — keep the port the same
+            // The server listens on all these ports locally
             inet_pton(AF_INET, g_redirectIP.c_str(), &addr->sin_addr);
-            // Rewrite destination port
-            addr->sin_port = htons(g_redirectPort);
 
             char newIp[INET_ADDRSTRLEN];
             inet_ntop(AF_INET, &addr->sin_addr, newIp, sizeof(newIp));
-            LOG_INFO("[NET] Connection redirected to %s:%u", newIp, g_redirectPort);
+            LOG_INFO("[NET] Connection redirected to %s:%u", newIp, port);
 
             g_gameOnline = true;
         } else if (port == DS2_LOGIN_PORT) {
