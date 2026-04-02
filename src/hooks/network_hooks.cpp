@@ -326,35 +326,32 @@ bool ServerRedirect::PatchRSAKey(const std::string& newPublicKey) {
                 continue;
             }
 
+            // Copy new key over old key (ds3os just does a straight memcpy)
+            size_t copyLen = newPublicKey.size() + 1;
+            size_t originalLen = strlen(originalKey) + 1;
+            size_t patchLen = copyLen > originalLen ? copyLen : originalLen;
+
             DWORD oldProtect = 0;
             bool madeWritable = false;
             if ((info.Protect & PAGE_READWRITE) == 0 && (info.Protect & PAGE_EXECUTE_READWRITE) == 0) {
                 if (!VirtualProtect(reinterpret_cast<void*>(addr),
-                    strlen(originalKey) + 1,
+                    patchLen,
                     PAGE_READWRITE, &oldProtect)) {
                     continue;
                 }
                 madeWritable = true;
             }
 
-            // Copy new key over old key
-            size_t copyLen = newPublicKey.size() + 1;
-            if (copyLen > strlen(originalKey) + 1) {
-                LOG_ERROR("[REDIRECT] New RSA key is longer than original — cannot patch");
-                continue;
-            }
-
             memcpy(reinterpret_cast<void*>(addr), newPublicKey.c_str(), copyLen);
 
             // Zero-fill remaining bytes if new key is shorter
-            size_t remaining = strlen(originalKey) + 1 - copyLen;
-            if (remaining > 0) {
-                memset(reinterpret_cast<void*>(addr + copyLen), 0, remaining);
+            if (copyLen < originalLen) {
+                memset(reinterpret_cast<void*>(addr + copyLen), 0, originalLen - copyLen);
             }
 
             if (madeWritable) {
                 VirtualProtect(reinterpret_cast<void*>(addr),
-                    strlen(originalKey) + 1,
+                    patchLen,
                     oldProtect, &oldProtect);
             }
 
