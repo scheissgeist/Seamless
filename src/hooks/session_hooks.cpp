@@ -249,12 +249,16 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
         }
     }
 
-    // Log ALL session-related messages
+    // Log session, item, and interaction messages for debugging
     if (strstr(className, "Session") || strstr(className, "Sign") ||
         strstr(className, "Guest") || strstr(className, "BreakIn") ||
         strstr(className, "Leave") || strstr(className, "Return") ||
         strstr(className, "Banish") || strstr(className, "Remove") ||
-        strstr(className, "Phantom") || strstr(className, "Summon")) {
+        strstr(className, "Phantom") || strstr(className, "Summon") ||
+        strstr(className, "Item") || strstr(className, "Buy") ||
+        strstr(className, "Chest") || strstr(className, "Treasure") ||
+        strstr(className, "Bonfire") || strstr(className, "Visit") ||
+        strstr(className, "Boss") || strstr(className, "FogWall")) {
         LOG_INFO("[PROTOBUF >>] %s (seamless=%s)", className,
                  g_seamlessActive.load() ? "ON" : "OFF");
     }
