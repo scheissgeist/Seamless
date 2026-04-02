@@ -46,3 +46,4 @@ server/Saved/default/last_activity.time
 Release/Server/Saved/default/private.key
 Release/Server/Saved/default/database.sqlite
 Release/Server/Saved/default/last_activity.time
+third_party/ds3os/build/
