@@ -226,22 +226,13 @@ bool ServerRedirect::PatchHostname(const std::string& newHostname) {
 
         bool patched = false;
         for (uintptr_t addr : matches) {
-            // Check if memory is writable
-            MEMORY_BASIC_INFORMATION info;
-            if (VirtualQuery(reinterpret_cast<void*>(addr), &info, sizeof(info)) == 0) {
-                continue;
-            }
-
-            // Make writable if needed
+            // Force memory writable
             DWORD oldProtect = 0;
-            bool madeWritable = false;
-            if ((info.Protect & PAGE_READWRITE) == 0 && (info.Protect & PAGE_EXECUTE_READWRITE) == 0) {
-                if (!VirtualProtect(reinterpret_cast<void*>(addr),
-                    (wcslen(originalHostname) + 1) * sizeof(wchar_t),
-                    PAGE_READWRITE, &oldProtect)) {
-                    continue;
-                }
-                madeWritable = true;
+            size_t hostnameBytes = (wcslen(originalHostname) + 1) * sizeof(wchar_t);
+            if (!VirtualProtect(reinterpret_cast<void*>(addr),
+                hostnameBytes, PAGE_READWRITE, &oldProtect)) {
+                LOG_WARNING("[REDIRECT] VirtualProtect failed for hostname at 0x%p", reinterpret_cast<void*>(addr));
+                continue;
             }
 
             // Convert hostname to wide string and write it
@@ -276,11 +267,8 @@ bool ServerRedirect::PatchHostname(const std::string& newHostname) {
             }
 
             // Restore protection
-            if (madeWritable) {
-                VirtualProtect(reinterpret_cast<void*>(addr),
-                    (wcslen(originalHostname) + 1) * sizeof(wchar_t),
-                    oldProtect, &oldProtect);
-            }
+            VirtualProtect(reinterpret_cast<void*>(addr),
+                hostnameBytes, oldProtect, &oldProtect);
 
             LOG_INFO("[REDIRECT] Patched hostname at 0x%p", reinterpret_cast<void*>(addr));
             patched = true;
@@ -321,25 +309,18 @@ bool ServerRedirect::PatchRSAKey(const std::string& newPublicKey) {
 
         bool patched = false;
         for (uintptr_t addr : matches) {
-            MEMORY_BASIC_INFORMATION info;
-            if (VirtualQuery(reinterpret_cast<void*>(addr), &info, sizeof(info)) == 0) {
-                continue;
-            }
-
             // Copy new key over old key (ds3os just does a straight memcpy)
             size_t copyLen = newPublicKey.size() + 1;
             size_t originalLen = strlen(originalKey) + 1;
             size_t patchLen = copyLen > originalLen ? copyLen : originalLen;
 
+            // Force memory writable — always VirtualProtect regardless of current state
             DWORD oldProtect = 0;
-            bool madeWritable = false;
-            if ((info.Protect & PAGE_READWRITE) == 0 && (info.Protect & PAGE_EXECUTE_READWRITE) == 0) {
-                if (!VirtualProtect(reinterpret_cast<void*>(addr),
-                    patchLen,
-                    PAGE_READWRITE, &oldProtect)) {
-                    continue;
-                }
-                madeWritable = true;
+            if (!VirtualProtect(reinterpret_cast<void*>(addr),
+                patchLen, PAGE_READWRITE, &oldProtect)) {
+                LOG_WARNING("[REDIRECT] VirtualProtect failed at 0x%p (error %u)",
+                    reinterpret_cast<void*>(addr), GetLastError());
+                continue;
             }
 
             memcpy(reinterpret_cast<void*>(addr), newPublicKey.c_str(), copyLen);
@@ -349,11 +330,8 @@ bool ServerRedirect::PatchRSAKey(const std::string& newPublicKey) {
                 memset(reinterpret_cast<void*>(addr + copyLen), 0, originalLen - copyLen);
             }
 
-            if (madeWritable) {
-                VirtualProtect(reinterpret_cast<void*>(addr),
-                    patchLen,
-                    oldProtect, &oldProtect);
-            }
+            VirtualProtect(reinterpret_cast<void*>(addr),
+                patchLen, oldProtect, &oldProtect);
 
             LOG_INFO("[REDIRECT] Patched RSA key at 0x%p", reinterpret_cast<void*>(addr));
             patched = true;
