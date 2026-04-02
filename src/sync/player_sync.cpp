@@ -466,57 +466,95 @@ bool PlayerSync::MaxPhantomTimer() {
 void PlayerSync::EnableSummoning() {
     if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
 
+    // ==========================================================================
+    // CE-verified TeamType patch (2026-04-02)
+    //
+    // The game writes TeamType via: DarkSoulsII.exe+0xDF1719
+    //   movaps [rax+rdx-10], xmm0
+    // Value is 2 bytes (uint16): 0=Host, 513=WhitePhantom, 515=Sunbro, 1799=DarkSpirit
+    //
+    // We found the address at runtime via CE scanning (513 as phantom, 0 as host).
+    // The address is heap-allocated and changes per session, so we scan for it
+    // on first call, cache it, and write 0 every update.
+    // ==========================================================================
+
+    static uintptr_t s_teamTypeAddr = 0;
+    static int s_scanAttempts = 0;
+    static bool s_patched = false;
+
     auto& resolver = DS2Coop::AddressResolver::GetInstance();
     uintptr_t gmImp = resolver.GetGameManagerImp();
     if (!gmImp) return;
 
-    // DS2 SotFS TeamType pointer chain (multiple known paths):
-    // Path 1: GameManagerImp -> [+0x10] -> [+0x18] -> [+0x28] -> +0x3C4 (PlayerCtrl.TeamType)
-    // Path 2: GameManagerImp -> [+0x10] -> [+0x18] -> [+0x28] -> +0x40 (PlayerCtrl.PhantomState)
-    // Path 3: GameManagerImp -> [+0x38] -> [+0xD8] -> +0x8 (alternate via PlayerData)
-    // We try all known chains and write 0 (Host) to any valid TeamType we find
-
-    static bool s_logged = false;
-
-    // Try the NetPlayerManager chain
-    __try {
-        // GameManagerImp -> +0x10 -> NetPlayerManager
-        uintptr_t netPlayerMgr = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0x10, &netPlayerMgr) && netPlayerMgr) {
-            // NetPlayerManager -> +0x18 -> LocalPlayer
-            uintptr_t localPlayer = 0;
-            if (Memory::Read<uintptr_t>(netPlayerMgr + 0x18, &localPlayer) && localPlayer) {
-                // LocalPlayer -> +0x28 -> PlayerCtrl
-                uintptr_t playerCtrl = 0;
-                if (Memory::Read<uintptr_t>(localPlayer + 0x28, &playerCtrl) && playerCtrl) {
-                    // PlayerCtrl -> +0x3C4 -> TeamType (int32)
-                    int32_t teamType = -1;
-                    if (Memory::Read<int32_t>(playerCtrl + 0x3C4, &teamType)) {
-                        if (teamType != 0 && teamType < 100) { // sanity check
-                            Memory::Write<int32_t>(playerCtrl + 0x3C4, 0);
-                            if (!s_logged) {
-                                LOG_INFO("EnableSummoning: set TeamType to Host via PlayerCtrl chain (was %d)", teamType);
-                                s_logged = true;
-                            }
-                        }
+    // If we already found the address, just keep writing 0
+    if (s_teamTypeAddr != 0) {
+        __try {
+            uint16_t val = 0;
+            if (Memory::Read<uint16_t>(s_teamTypeAddr, &val)) {
+                if (val == 513 || val == 514 || val == 515 || val == 516) {
+                    Memory::Write<uint16_t>(s_teamTypeAddr, (uint16_t)0);
+                    if (!s_patched) {
+                        LOG_INFO("TeamType PATCHED to Host (was %u) at 0x%llX", val, s_teamTypeAddr);
+                        s_patched = true;
                     }
                 }
+            } else {
+                // Address went stale, re-scan next time
+                s_teamTypeAddr = 0;
+                s_patched = false;
             }
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            s_teamTypeAddr = 0;
+            s_patched = false;
+        }
+        return;
+    }
 
-            // Also try: NetPlayerManager -> +0x40 -> PhantomID
-            uintptr_t localPlayer2 = 0;
-            if (Memory::Read<uintptr_t>(netPlayerMgr + 0x18, &localPlayer2) && localPlayer2) {
-                // Try additional offsets for phantom type
-                for (uint32_t off : { 0x3C0u, 0x3C4u, 0x3C8u, 0x3CCu }) {
-                    uintptr_t playerCtrl2 = 0;
-                    if (Memory::Read<uintptr_t>(localPlayer2 + 0x28, &playerCtrl2) && playerCtrl2) {
-                        int32_t val = -1;
-                        if (Memory::Read<int32_t>(playerCtrl2 + off, &val)) {
-                            // TeamType values: 0=Host, 1=WhitePhantom, 2=DarkSpirit, etc.
-                            if (val >= 1 && val <= 5) {
-                                Memory::Write<int32_t>(playerCtrl2 + off, 0);
-                                LOG_INFO("EnableSummoning: zeroed value %d at PlayerCtrl+0x%X", val, off);
-                            }
+    // Scan for TeamType address — look for uint16 value 513 near the player data region
+    // We scan from GameManagerImp outward since TeamType is in player-related memory
+    if (s_scanAttempts > 10) return; // don't scan forever
+    s_scanAttempts++;
+
+    __try {
+        // Follow GameManagerImp pointer chains to find the player data region
+        // then scan nearby for value 513
+        uintptr_t searchBases[4] = {0};
+        int baseCount = 0;
+
+        // Chain 1: GMImp -> +0x38 -> PlayerData
+        uintptr_t pd = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0x38, &pd) && pd) {
+            searchBases[baseCount++] = pd;
+        }
+        // Chain 2: GMImp -> +0x10 -> NetPlayerMgr
+        uintptr_t npm = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0x10, &npm) && npm) {
+            searchBases[baseCount++] = npm;
+            // Chain 3: NetPlayerMgr -> +0x18 -> LocalPlayer
+            uintptr_t lp = 0;
+            if (Memory::Read<uintptr_t>(npm + 0x18, &lp) && lp) {
+                searchBases[baseCount++] = lp;
+            }
+        }
+
+        for (int b = 0; b < baseCount; b++) {
+            uintptr_t base = searchBases[b];
+            // Scan a wide range around the base (up to 64KB)
+            for (uintptr_t offset = 0; offset < 0x10000; offset += 2) {
+                uint16_t val = 0;
+                if (Memory::Read<uint16_t>(base + offset, &val)) {
+                    if (val == 513) {
+                        // Found a candidate — verify it's writable and stable
+                        // Try writing 0 and reading back
+                        Memory::Write<uint16_t>(base + offset, (uint16_t)0);
+                        uint16_t check = 0;
+                        Memory::Read<uint16_t>(base + offset, &check);
+                        if (check == 0) {
+                            s_teamTypeAddr = base + offset;
+                            LOG_INFO("TeamType FOUND at 0x%llX (base 0x%llX + 0x%llX), was 513, set to 0",
+                                     s_teamTypeAddr, base, offset);
+                            s_patched = true;
+                            return;
                         }
                     }
                 }
