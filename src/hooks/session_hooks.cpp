@@ -196,16 +196,17 @@ static bool IsOutgoingDisconnect(const char* className) {
 }
 
 // Messages to block when RECEIVING (incoming — parse hook)
-// Block everything the server sends that would end our session.
+// Block server-initiated disconnects (boss kill, death, timeout).
+// Do NOT block ReturnToOwnWorld — that's the Black Separation Crystal
+// and blocking it crashes the game's session teardown state machine.
 static bool IsIncomingDisconnect(const char* className) {
     if (!className) return false;
     if (strstr(className, "DisconnectSession")) return true;
-    if (strstr(className, "LeaveSession")) return true;
     if (strstr(className, "LeaveGuestPlayer")) return true;
     if (strstr(className, "BanishPlayer")) return true;
-    if (strstr(className, "ReturnToOwnWorld")) return true;
-    if (strstr(className, "RemovePlayer")) return true;
     if (strstr(className, "BreakInTarget")) return true;
+    // LeaveSession, ReturnToOwnWorld, RemovePlayer — allowed through
+    // These are responses to player-initiated actions (crystal, menu quit)
     return false;
 }
 
