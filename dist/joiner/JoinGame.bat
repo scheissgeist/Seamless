@@ -5,11 +5,10 @@ echo   DS2 SEAMLESS CO-OP
 echo   ==================
 echo.
 
-:: Try auto-detect first
+:: Try auto-detect
 set "GAME_DIR="
 set "DS2=steamapps\common\Dark Souls II Scholar of the First Sin\Game"
 
-:: Check common locations
 if exist "C:\Program Files (x86)\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=C:\Program Files (x86)\Steam\%DS2%"
 if exist "C:\Program Files\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=C:\Program Files\Steam\%DS2%"
 if exist "D:\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=D:\Steam\%DS2%"
@@ -47,11 +46,15 @@ if not exist "%GAME_DIR%\DarkSoulsII.exe" (
     exit /b 1
 )
 
-:: Check if already configured
+:: Always update mod files (DLL + key) even if already installed
+copy /y "%~dp0dinput8.dll" "%GAME_DIR%\" >nul 2>&1
+copy /y "%~dp0ds2_server_public.key" "%GAME_DIR%\" >nul 2>&1
+echo   Mod files updated.
+
+:: Check if already configured with a host IP
 if exist "%GAME_DIR%\ds2_seamless_coop.ini" (
-    echo   Mod already installed.
     echo.
-    echo   [1] Launch game
+    echo   [1] Launch game (keep current settings)
     echo   [2] Change host IP
     echo.
     set /p ACTION="   Choice (1/2): "
@@ -85,10 +88,6 @@ echo use_custom_server=true>> "%GAME_DIR%\ds2_seamless_coop.ini"
 echo server_ip=%HOST_IP%>> "%GAME_DIR%\ds2_seamless_coop.ini"
 echo server_port=50031>> "%GAME_DIR%\ds2_seamless_coop.ini"
 echo allow_invasions=false>> "%GAME_DIR%\ds2_seamless_coop.ini"
-
-:: Copy mod files
-copy /y "%~dp0dinput8.dll" "%GAME_DIR%\" >nul 2>&1
-copy /y "%~dp0ds2_server_public.key" "%GAME_DIR%\" >nul 2>&1
 
 echo.
 echo   Installed! Server IP: %HOST_IP%

@@ -784,10 +784,10 @@
     "SendDiscordNotice_QuickMatch": true,
     "SendDiscordNotice_SummonSign": true,
     "ServerDescription": "A custom Dark Souls server.",
-    "ServerHostname": "127.0.0.1",
+    "ServerHostname": "25.35.223.224",
     "ServerId": "2a25335a-024f-4127-ab5a-f3f95d550e00",
     "ServerName": "DS2 Seamless Co-op Server",
-    "ServerPrivateHostname": "127.0.0.1",
+    "ServerPrivateHostname": "25.35.223.224",
     "StartGameServerPortRange": 50060,
     "SummonSignMatchingParameters": {
         "DisableLevelMatching": false,

@@ -122,10 +122,16 @@ static LRESULT CALLBACK HookedWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM
 // Hooked ResizeBuffers — called when the game changes resolution/fullscreen
 // We must release our RTV before the game resizes, then rebuild after
 // ============================================================================
+static bool g_resizing = false;
+
 static HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain,
     UINT bufferCount, UINT width, UINT height, DXGI_FORMAT format, UINT flags) {
 
-    LOG_INFO("ResizeBuffers called: %ux%u", width, height);
+    if (width == 0 || height == 0) {
+        return g_originalResizeBuffers(swapChain, bufferCount, width, height, format, flags);
+    }
+
+    g_resizing = true;
 
     // Release our RTV — the backbuffer is about to be destroyed
     if (g_rtv) { g_rtv->Release(); g_rtv = nullptr; }
@@ -144,8 +150,10 @@ static HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain,
     if (SUCCEEDED(hr) && g_imguiInitialized) {
         RebuildRTV(swapChain);
         ImGui_ImplDX11_CreateDeviceObjects();
+        LOG_INFO("RTV (re)built: %ux%u", width, height);
     }
 
+    g_resizing = false;
     return hr;
 }
 
@@ -153,8 +161,8 @@ static HRESULT STDMETHODCALLTYPE HookedResizeBuffers(IDXGISwapChain* swapChain,
 // Hooked Present
 // ============================================================================
 static HRESULT STDMETHODCALLTYPE HookedPresent(IDXGISwapChain* swapChain, UINT syncInterval, UINT flags) {
-    // Don't touch ImGui if we're shutting down
-    if (g_shuttingDown) return g_originalPresent(swapChain, syncInterval, flags);
+    // Don't touch ImGui if we're shutting down or resizing
+    if (g_shuttingDown || g_resizing) return g_originalPresent(swapChain, syncInterval, flags);
 
     // --- One-time init on first real Present call ---
     if (!g_imguiInitialized) {
