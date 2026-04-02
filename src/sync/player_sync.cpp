@@ -466,27 +466,65 @@ bool PlayerSync::MaxPhantomTimer() {
 void PlayerSync::EnableSummoning() {
     if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
 
-    uintptr_t playerData = 0;
-    if (!ReadPlayerDataBase(playerData)) return;
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    uintptr_t gmImp = resolver.GetGameManagerImp();
+    if (!gmImp) return;
 
-    // Set TeamType to 0 (Host/Normal) — this makes phantoms:
-    // - Appear solid (not ghostly white)
-    // - Able to rest at bonfires
-    // - Able to talk to NPCs
-    // - Able to pick up items
-    // - Able to open doors and use levers
+    // DS2 SotFS TeamType pointer chain (multiple known paths):
+    // Path 1: GameManagerImp -> [+0x10] -> [+0x18] -> [+0x28] -> +0x3C4 (PlayerCtrl.TeamType)
+    // Path 2: GameManagerImp -> [+0x10] -> [+0x18] -> [+0x28] -> +0x40 (PlayerCtrl.PhantomState)
+    // Path 3: GameManagerImp -> [+0x38] -> [+0xD8] -> +0x8 (alternate via PlayerData)
+    // We try all known chains and write 0 (Host) to any valid TeamType we find
+
+    static bool s_logged = false;
+
+    // Try the NetPlayerManager chain
     __try {
-        uint8_t teamType = 0xFF;
-        if (Memory::Read<uint8_t>(playerData + Offsets::GameManager::TeamType, &teamType)) {
-            if (teamType != 0x00) {
-                Memory::Write<uint8_t>(playerData + Offsets::GameManager::TeamType, (uint8_t)0x00);
-                LOG_INFO("EnableSummoning: set TeamType to Host (was 0x%02X)", teamType);
+        // GameManagerImp -> +0x10 -> NetPlayerManager
+        uintptr_t netPlayerMgr = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0x10, &netPlayerMgr) && netPlayerMgr) {
+            // NetPlayerManager -> +0x18 -> LocalPlayer
+            uintptr_t localPlayer = 0;
+            if (Memory::Read<uintptr_t>(netPlayerMgr + 0x18, &localPlayer) && localPlayer) {
+                // LocalPlayer -> +0x28 -> PlayerCtrl
+                uintptr_t playerCtrl = 0;
+                if (Memory::Read<uintptr_t>(localPlayer + 0x28, &playerCtrl) && playerCtrl) {
+                    // PlayerCtrl -> +0x3C4 -> TeamType (int32)
+                    int32_t teamType = -1;
+                    if (Memory::Read<int32_t>(playerCtrl + 0x3C4, &teamType)) {
+                        if (teamType != 0 && teamType < 100) { // sanity check
+                            Memory::Write<int32_t>(playerCtrl + 0x3C4, 0);
+                            if (!s_logged) {
+                                LOG_INFO("EnableSummoning: set TeamType to Host via PlayerCtrl chain (was %d)", teamType);
+                                s_logged = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Also try: NetPlayerManager -> +0x40 -> PhantomID
+            uintptr_t localPlayer2 = 0;
+            if (Memory::Read<uintptr_t>(netPlayerMgr + 0x18, &localPlayer2) && localPlayer2) {
+                // Try additional offsets for phantom type
+                for (uint32_t off : { 0x3C0u, 0x3C4u, 0x3C8u, 0x3CCu }) {
+                    uintptr_t playerCtrl2 = 0;
+                    if (Memory::Read<uintptr_t>(localPlayer2 + 0x28, &playerCtrl2) && playerCtrl2) {
+                        int32_t val = -1;
+                        if (Memory::Read<int32_t>(playerCtrl2 + off, &val)) {
+                            // TeamType values: 0=Host, 1=WhitePhantom, 2=DarkSpirit, etc.
+                            if (val >= 1 && val <= 5) {
+                                Memory::Write<int32_t>(playerCtrl2 + off, 0);
+                                LOG_INFO("EnableSummoning: zeroed value %d at PlayerCtrl+0x%X", val, off);
+                            }
+                        }
+                    }
+                }
             }
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) {}
 
-    // Also set PhantomType to 0 (no phantom visual effect) via NetSession
-    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    // Also set PhantomType to 0 via NetSession
     uintptr_t netSession = resolver.GetNetSessionManager();
     if (!netSession) return;
 

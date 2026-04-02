@@ -21,7 +21,7 @@ enum class GameVersion {
 struct ModConfig {
     bool enabled = true;
     bool debug_logging = false;
-    uint16_t max_players = 4;
+    uint16_t max_players = 6;
     uint16_t port = 27015;
     bool allow_invasions = false;
     bool sync_bonfires = true;

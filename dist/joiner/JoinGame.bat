@@ -82,7 +82,7 @@ if "%HOST_IP%"=="" (
 :: Write config
 echo enabled=true> "%GAME_DIR%\ds2_seamless_coop.ini"
 echo debug_logging=true>> "%GAME_DIR%\ds2_seamless_coop.ini"
-echo max_players=4>> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo max_players=6>> "%GAME_DIR%\ds2_seamless_coop.ini"
 echo port=27015>> "%GAME_DIR%\ds2_seamless_coop.ini"
 echo use_custom_server=true>> "%GAME_DIR%\ds2_seamless_coop.ini"
 echo server_ip=%HOST_IP%>> "%GAME_DIR%\ds2_seamless_coop.ini"
