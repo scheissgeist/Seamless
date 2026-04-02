@@ -232,14 +232,20 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
     // If seamless mode is active, block disconnect messages
     if (g_seamlessActive.load()) {
         if (IsOutgoingDisconnect(className)) {
-            LOG_INFO("[SEAMLESS] Seamless is ON, blocking: %s", className);
             g_blockedCount++;
-            LOG_INFO("[SEAMLESS] BLOCKED outgoing message: %s (total blocked: %u)",
-                     className, g_blockedCount.load());
+            LOG_INFO("[SEAMLESS] BLOCKED outgoing: %s (total: %u)", className, g_blockedCount.load());
 
-            // Return target unchanged - the message is "serialized" to nothing.
-            // The game thinks it sent the message, but the buffer is untouched.
-            return target;
+            // Let the serialize happen so the buffer advances correctly
+            // (returning target unchanged crashes the game's state machine).
+            // The message will serialize but we'll mark it for the network
+            // layer to drop. For now, let it serialize — the incoming block
+            // on the receiving side prevents the actual disconnect.
+            uint8_t* result = g_originalSerialize(thisPtr, target);
+            // Zero the serialized bytes so the message is corrupt/empty
+            if (result > target) {
+                memset(target, 0, result - target);
+            }
+            return result;
         }
 
         if (IsDeathMessage(className)) {
