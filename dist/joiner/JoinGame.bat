@@ -1,131 +1,98 @@
 @echo off
-setlocal enabledelayedexpansion
 title DS2 Seamless Co-op
 echo.
 echo   DS2 SEAMLESS CO-OP
 echo   ==================
 echo.
 
-:: Find Steam install path from registry
-set "STEAM_PATH="
-for /f "tokens=2*" %%a in ('reg query "HKLM\SOFTWARE\WOW6432Node\Valve\Steam" /v InstallPath 2^>nul') do set "STEAM_PATH=%%b"
-if not defined STEAM_PATH (
-    for /f "tokens=2*" %%a in ('reg query "HKLM\SOFTWARE\Valve\Steam" /v InstallPath 2^>nul') do set "STEAM_PATH=%%b"
-)
-
-:: Search for DS2 in all Steam library folders
+:: Try auto-detect first
 set "GAME_DIR="
-set "DS2_FOLDER=steamapps\common\Dark Souls II Scholar of the First Sin\Game"
+set "DS2=steamapps\common\Dark Souls II Scholar of the First Sin\Game"
 
-:: Check main Steam path
-if defined STEAM_PATH (
-    if exist "!STEAM_PATH!\!DS2_FOLDER!\DarkSoulsII.exe" (
-        set "GAME_DIR=!STEAM_PATH!\!DS2_FOLDER!"
-    )
-)
+:: Check common locations
+if exist "C:\Program Files (x86)\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=C:\Program Files (x86)\Steam\%DS2%"
+if exist "C:\Program Files\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=C:\Program Files\Steam\%DS2%"
+if exist "D:\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=D:\Steam\%DS2%"
+if exist "D:\SteamLibrary\%DS2%\DarkSoulsII.exe" set "GAME_DIR=D:\SteamLibrary\%DS2%"
+if exist "E:\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=E:\Steam\%DS2%"
+if exist "E:\SteamLibrary\%DS2%\DarkSoulsII.exe" set "GAME_DIR=E:\SteamLibrary\%DS2%"
+if exist "F:\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=F:\Steam\%DS2%"
+if exist "F:\SteamLibrary\%DS2%\DarkSoulsII.exe" set "GAME_DIR=F:\SteamLibrary\%DS2%"
+if exist "G:\Steam\%DS2%\DarkSoulsII.exe" set "GAME_DIR=G:\Steam\%DS2%"
+if exist "G:\SteamLibrary\%DS2%\DarkSoulsII.exe" set "GAME_DIR=G:\SteamLibrary\%DS2%"
 
-:: Parse libraryfolders.vdf for additional Steam libraries
-if not defined GAME_DIR if defined STEAM_PATH (
-    if exist "!STEAM_PATH!\steamapps\libraryfolders.vdf" (
-        for /f "tokens=*" %%L in ('findstr /C:"path" "!STEAM_PATH!\steamapps\libraryfolders.vdf" 2^>nul') do (
-            for /f "tokens=2 delims=	" %%P in ("%%L") do (
-                set "LIB_PATH=%%~P"
-                set "LIB_PATH=!LIB_PATH:"=!"
-                if exist "!LIB_PATH!\!DS2_FOLDER!\DarkSoulsII.exe" (
-                    set "GAME_DIR=!LIB_PATH!\!DS2_FOLDER!"
-                )
-            )
-        )
-    )
-)
-
-:: Common fallback paths
-if not defined GAME_DIR (
-    for %%D in (
-        "C:\Program Files (x86)\Steam\!DS2_FOLDER!"
-        "C:\Program Files\Steam\!DS2_FOLDER!"
-        "D:\Steam\!DS2_FOLDER!"
-        "D:\SteamLibrary\!DS2_FOLDER!"
-        "E:\Steam\!DS2_FOLDER!"
-        "E:\SteamLibrary\!DS2_FOLDER!"
-        "F:\Steam\!DS2_FOLDER!"
-        "F:\SteamLibrary\!DS2_FOLDER!"
-    ) do (
-        if exist "%%~D\DarkSoulsII.exe" set "GAME_DIR=%%~D"
-    )
-)
-
-:: Still not found — ask the user
-if not defined GAME_DIR (
-    echo   Could not find Dark Souls II automatically.
+if defined GAME_DIR (
+    echo   Found DS2 at: %GAME_DIR%
     echo.
-    echo   Find your DarkSoulsII.exe file, then paste the folder path here.
-    echo   Example: D:\SteamLibrary\steamapps\common\Dark Souls II Scholar of the First Sin\Game
+    echo   [1] Use this path
+    echo   [2] Enter a different path
+    echo.
+    set /p CHOICE="   Choice (1/2): "
+    if "%CHOICE%"=="2" set "GAME_DIR="
+)
+
+if not defined GAME_DIR (
+    echo   Could not auto-detect DS2.
+    echo.
+    echo   Right-click DS2 in Steam, Manage, Browse Local Files
+    echo   then copy and paste that path here.
     echo.
     set /p GAME_DIR="   DS2 Game folder: "
     echo.
-    if not exist "!GAME_DIR!\DarkSoulsII.exe" (
-        echo   DarkSoulsII.exe not found in that folder. Check the path and try again.
-        pause
-        exit /b 1
-    )
 )
 
-echo   Found DS2: !GAME_DIR!
-echo.
+if not exist "%GAME_DIR%\DarkSoulsII.exe" (
+    echo   ERROR: DarkSoulsII.exe not found at that path.
+    pause
+    exit /b 1
+)
 
-:: Check if already installed with a valid IP
-if exist "!GAME_DIR!\ds2_seamless_coop.ini" (
-    findstr /C:"CHANGE_ME" "!GAME_DIR!\ds2_seamless_coop.ini" >nul 2>&1
-    if errorlevel 1 (
-        echo   Mod already installed. Launching DS2...
+:: Check if already configured
+if exist "%GAME_DIR%\ds2_seamless_coop.ini" (
+    echo   Mod already installed.
+    echo.
+    echo   [1] Launch game
+    echo   [2] Change host IP
+    echo.
+    set /p ACTION="   Choice (1/2): "
+    if "%ACTION%"=="1" (
+        echo   Launching DS2...
         start steam://rungameid/335300
         timeout /t 3 >nul
         exit
     )
 )
 
-:: First time setup
+:: Ask for host IP
+echo.
 echo   Enter the HOST's Hamachi IP address
 echo   (ask your friend for their 25.x.x.x IP)
 echo.
 set /p HOST_IP="   Host IP: "
-echo.
 
-if "!HOST_IP!"=="" (
-    echo   No IP entered. Exiting.
+if "%HOST_IP%"=="" (
+    echo   No IP entered.
     pause
     exit /b 1
 )
 
-:: Write the INI
-(
-echo enabled=true
-echo debug_logging=true
-echo max_players=4
-echo port=27015
-echo use_custom_server=true
-echo server_ip=!HOST_IP!
-echo server_port=50031
-echo allow_invasions=false
-echo sync_bonfires=true
-echo sync_items=false
-echo sync_enemies=false
-) > "!GAME_DIR!\ds2_seamless_coop.ini"
+:: Write config
+echo enabled=true> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo debug_logging=true>> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo max_players=4>> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo port=27015>> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo use_custom_server=true>> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo server_ip=%HOST_IP%>> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo server_port=50031>> "%GAME_DIR%\ds2_seamless_coop.ini"
+echo allow_invasions=false>> "%GAME_DIR%\ds2_seamless_coop.ini"
 
 :: Copy mod files
-copy /y "%~dp0dinput8.dll" "!GAME_DIR!\" >nul 2>&1
-copy /y "%~dp0ds2_server_public.key" "!GAME_DIR!\" >nul 2>&1
+copy /y "%~dp0dinput8.dll" "%GAME_DIR%\" >nul 2>&1
+copy /y "%~dp0ds2_server_public.key" "%GAME_DIR%\" >nul 2>&1
 
-if errorlevel 1 (
-    echo   ERROR: Could not copy files. Try running as Administrator.
-    pause
-    exit /b 1
-)
-
-echo   Mod installed! Server IP: !HOST_IP!
 echo.
-echo   Launching Dark Souls II...
+echo   Installed! Server IP: %HOST_IP%
+echo   Launching DS2...
 start steam://rungameid/335300
 echo.
 echo   Press INSERT in-game for the co-op menu.
