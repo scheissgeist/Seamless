@@ -294,15 +294,9 @@ static bool __fastcall ParseHook(void* thisPtr, void* data, int size) {
             return false;
         }
 
-        // Filter summon signs — only show signs from players in our session
-        if (g_seamlessActive.load() && data && size > 0 &&
-            (strstr(className, "SummonSign") || strstr(className, "SignList") ||
-             strstr(className, "PushSign"))) {
-            if (!ContainsSessionSteamId(static_cast<const uint8_t*>(data), size)) {
-                LOG_DEBUG("[SEAMLESS] Filtered sign from non-session player");
-                return false;
-            }
-        }
+        // Sign filtering disabled — we're on a private server, no randoms.
+        // The old filter rejected entire SignList responses if ANY sign
+        // contained a Steam ID not in the whitelist, breaking sign visibility.
     }
 
     return result;
