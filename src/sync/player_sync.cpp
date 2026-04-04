@@ -112,25 +112,52 @@ static bool TryReadNameBuffer(uintptr_t addr, wchar_t* buf, int maxChars) {
     }
 }
 
-static std::string ReadCharacterName() {
-    // Try NetSessionManager → [+0x20] → +0x234 (wchar_t[32], Bob Edition CT)
-    auto& resolver = DS2Coop::AddressResolver::GetInstance();
-    uintptr_t netSession = resolver.GetNetSessionManager();
-    if (!netSession) return "";
-
-    uintptr_t playerPtr = 0;
-    if (!Memory::Read<uintptr_t>(netSession + Offsets::NetSession::PlayerPointer, &playerPtr) || !playerPtr)
-        return "";
-
+static std::string TryReadNameFrom(uintptr_t addr, const char* source) {
     wchar_t nameBuf[32] = {};
-    if (!TryReadNameBuffer(playerPtr + Offsets::NetSession::PlayerName, nameBuf, 31))
-        return "";
-
+    if (!TryReadNameBuffer(addr, nameBuf, 31)) return "";
+    if (nameBuf[0] == 0) return "";
     std::string result = WcharToUtf8(nameBuf);
-    if (!result.empty()) {
-        LOG_INFO("[NAME] Character name from NetSession: %s", result.c_str());
-    }
+    if (!result.empty())
+        LOG_INFO("[NAME] Character name from %s: %s", source, result.c_str());
     return result;
+}
+
+static std::string ReadCharacterName() {
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+
+    // Path 1: NetSessionManager → [+0x20] → +0x234 (wchar_t)
+    // This is the HOST's name when you're a phantom, YOUR name when you're host.
+    uintptr_t netSession = resolver.GetNetSessionManager();
+    if (netSession) {
+        uintptr_t playerPtr = 0;
+        if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::PlayerPointer, &playerPtr) && playerPtr) {
+            std::string name = TryReadNameFrom(playerPtr + Offsets::NetSession::PlayerName, "NetSession+0x234");
+            if (!name.empty()) return name;
+        }
+    }
+
+    // Path 2: GameManagerImp → [+0x38] (PlayerData) → +0x24 (wchar_t)
+    // Direct character name from player data.
+    uintptr_t gmImp = resolver.GetGameManagerImp();
+    if (gmImp) {
+        uintptr_t playerData = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0x38, &playerData) && playerData) {
+            std::string name = TryReadNameFrom(playerData + 0x24, "PlayerData+0x24");
+            if (!name.empty()) return name;
+        }
+
+        // Path 3: GameManagerImp → [+0xD0] (PlayerCtrl) → [+0x490] (PlayerParam) → +0x24
+        uintptr_t playerCtrl = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0xD0, &playerCtrl) && playerCtrl) {
+            uintptr_t playerParam = 0;
+            if (Memory::Read<uintptr_t>(playerCtrl + 0x490, &playerParam) && playerParam) {
+                std::string name = TryReadNameFrom(playerParam + 0x24, "PlayerParam+0x24");
+                if (!name.empty()) return name;
+            }
+        }
+    }
+
+    return "";
 }
 
 static bool ReadPlayerPosition(float& x, float& y, float& z, float& rotY) {
