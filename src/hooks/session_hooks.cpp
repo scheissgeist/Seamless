@@ -188,11 +188,9 @@ static const char* GetRttiClassName(void* obj) {
 // Messages to block when SENDING (outgoing — serialize hook)
 // Don't block ANY outgoing messages — let them serialize and send normally.
 // Blocking outgoing messages corrupts the server's session state.
-// Outgoing disconnect blocking is OFF. Blocking the serialize return does NOT
-// prevent the game's internal phantom removal — the game destroys phantom objects
-// first, THEN sends the network notification. Blocking the notification leaves
-// the game with dangling pointers → crash. The correct fix is to NOP the
-// internal boss-kill phantom removal function in the exe (CE task).
+// Outgoing disconnect blocking is OFF. See crash_history.md for why.
+// Instead, we capture the return address when LeaveGuestPlayer is serialized
+// to identify the caller function for future NOP patching.
 static bool IsOutgoingDisconnect(const char* className) {
     (void)className;
     return false;
@@ -286,6 +284,20 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
     if (g_seamlessActive.load()) {
         if (strstr(className, "NotifyJoinGuestPlayer"))
             OnPhantomJoined();
+    }
+
+    // Capture call stack when the game tries to send LeaveGuestPlayer or LeaveSession
+    // This tells us which function initiates phantom removal after boss kills.
+    if (strstr(className, "LeaveGuestPlayer") || strstr(className, "LeaveSession")) {
+        // Walk the return addresses on the stack to find the caller chain
+        void* callers[16] = {};
+        USHORT frames = CaptureStackBackTrace(0, 16, callers, nullptr);
+        uintptr_t exeBase = (uintptr_t)GetModuleHandle(nullptr);
+        LOG_INFO("[CALLTRACE] %s initiated from (exe base: 0x%llX):", className, exeBase);
+        for (int i = 0; i < frames && i < 16; i++) {
+            uintptr_t addr = (uintptr_t)callers[i];
+            LOG_INFO("[CALLTRACE]   [%d] 0x%llX (exe+0x%llX)", i, addr, addr - exeBase);
+        }
     }
 
     // Call original for all non-blocked messages
