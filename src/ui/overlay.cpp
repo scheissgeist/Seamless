@@ -250,15 +250,40 @@ void Overlay::RenderMainMenu() {
 
         ImGui::TextDisabled("Session Active");
         ImGui::Separator();
-        ImGui::Text("Players: %zu", players.size());
+
+        uint64_t localId = PeerManager::GetInstance().GetLocalPlayerId();
 
         for (const auto& p : players) {
-            bool isLocal = (p.playerId == 0 ||
-                            p.playerId == PeerManager::GetInstance().GetLocalPlayerId());
-            ImGui::Text("  %s%s",
-                        p.playerName.c_str(),
-                        isLocal ? "  (you)" : "");
+            bool isLocal = (p.playerId == 0 || p.playerId == localId);
+
+            // Name + (you) tag
+            if (isLocal)
+                ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f), "%s  (you)", p.playerName.c_str());
+            else if (!p.isAlive)
+                ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s  [dead]", p.playerName.c_str());
+            else
+                ImGui::Text("%s", p.playerName.c_str());
+
+            // HP bar (only if we have valid data)
+            if (p.maxHealth > 0) {
+                float frac = (float)p.health / (float)p.maxHealth;
+                if (frac < 0.0f) frac = 0.0f;
+                if (frac > 1.0f) frac = 1.0f;
+                ImVec4 barColor = frac > 0.5f ? ImVec4(0.2f, 0.7f, 0.2f, 1.0f)
+                                : frac > 0.25f ? ImVec4(0.8f, 0.6f, 0.1f, 1.0f)
+                                :               ImVec4(0.8f, 0.1f, 0.1f, 1.0f);
+                char hpLabel[32];
+                snprintf(hpLabel, sizeof(hpLabel), "%d / %d", p.health, p.maxHealth);
+                ImGui::PushStyleColor(ImGuiCol_PlotHistogram, barColor);
+                ImGui::ProgressBar(frac, ImVec2(-1, 6), "");
+                ImGui::PopStyleColor();
+            }
+
+            ImGui::Spacing();
         }
+
+        ImGui::Separator();
+        ImGui::Text("%zu player%s", players.size(), players.size() == 1 ? "" : "s");
 
         ImGui::Spacing();
         ImGui::Separator();
