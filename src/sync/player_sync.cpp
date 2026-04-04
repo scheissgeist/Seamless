@@ -26,6 +26,56 @@ PlayerSync& PlayerSync::GetInstance() {
     return instance;
 }
 
+// ============================================================================
+// NOP the boss-kill phantom return call in the exe.
+//
+// Ghidra analysis (2026-04-04):
+//   FUN_14044ef30 is the event dispatch. Line 12 calls FUN_140191bb0
+//   which creates EventPhantomReturn objects and sends all phantoms home.
+//   The CALL instruction is at exe+0x44ef7b (5 bytes: e8 30 2c d4 ff).
+//   NOPing it prevents the game from dismissing phantoms on boss death.
+// ============================================================================
+static void PatchPhantomReturnOnBossKill() {
+    uintptr_t exeBase = (uintptr_t)GetModuleHandle(nullptr);
+    uintptr_t callAddr = exeBase + 0x44ef7b;
+
+    // Verify the bytes match the expected CALL instruction
+    uint8_t expected[] = { 0xe8, 0x30, 0x2c, 0xd4, 0xff };
+    uint8_t actual[5] = {};
+
+    __try {
+        memcpy(actual, (void*)callAddr, 5);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERROR("PatchPhantomReturn: cannot read exe at 0x%llX", callAddr);
+        return;
+    }
+
+    if (memcmp(actual, expected, 5) != 0) {
+        // Bytes don't match — might be a different exe version or already patched
+        LOG_WARNING("PatchPhantomReturn: bytes at exe+0x44ef7b don't match expected CALL "
+                    "(got %02X %02X %02X %02X %02X, expected e8 30 2c d4 ff) — skipping",
+                    actual[0], actual[1], actual[2], actual[3], actual[4]);
+        // Check if already NOPed
+        uint8_t nops[] = { 0x90, 0x90, 0x90, 0x90, 0x90 };
+        if (memcmp(actual, nops, 5) == 0) {
+            LOG_INFO("PatchPhantomReturn: already patched (NOPs)");
+        }
+        return;
+    }
+
+    // Make the page writable, write NOPs, restore protection
+    DWORD oldProtect = 0;
+    if (!VirtualProtect((void*)callAddr, 5, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        LOG_ERROR("PatchPhantomReturn: VirtualProtect failed (error %u)", GetLastError());
+        return;
+    }
+
+    memset((void*)callAddr, 0x90, 5);  // 5x NOP
+    VirtualProtect((void*)callAddr, 5, oldProtect, &oldProtect);
+
+    LOG_INFO("PatchPhantomReturn: PATCHED exe+0x44ef7b — boss kill will no longer dismiss phantoms");
+}
+
 bool PlayerSync::Initialize() {
     if (m_initialized) return true;
 
@@ -39,6 +89,9 @@ bool PlayerSync::Initialize() {
         LOG_INFO("Player sync will read from GameManagerImp at 0x%p",
                  reinterpret_cast<void*>(resolver.GetGameManagerImp()));
     }
+
+    // Patch out boss-kill phantom dismissal
+    PatchPhantomReturnOnBossKill();
 
     m_initialized = true;
     LOG_INFO("Player sync initialized");
