@@ -148,12 +148,18 @@ static bool ReadPlayerPosition(float& x, float& y, float& z, float& rotY) {
 }
 
 static bool ReadPlayerHealth(int32_t& health, int32_t& maxHealth) {
-    uintptr_t playerData = 0;
-    if (!ReadPlayerDataBase(playerData)) return false;
+    // HP is on PlayerCtrl (GMImp+0xD0), NOT PlayerData (GMImp+0x38).
+    // PlayerCtrl + 0x168 = current HP, +0x170 = max HP (SotFS, from DS2S-META).
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    uintptr_t gmImp = resolver.GetGameManagerImp();
+    if (!gmImp) return false;
+
+    uintptr_t playerCtrl = 0;
+    if (!Memory::Read<uintptr_t>(gmImp + 0xD0, &playerCtrl) || !playerCtrl) return false;
 
     bool ok = true;
-    ok &= Memory::Read<int32_t>(playerData + Offsets::GameManager::Health, &health);
-    ok &= Memory::Read<int32_t>(playerData + Offsets::GameManager::MaxHealth, &maxHealth);
+    ok &= Memory::Read<int32_t>(playerCtrl + 0x168, &health);
+    ok &= Memory::Read<int32_t>(playerCtrl + 0x170, &maxHealth);
     return ok;
 }
 
