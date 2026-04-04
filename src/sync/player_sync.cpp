@@ -76,6 +76,85 @@ static void PatchPhantomReturnOnBossKill() {
     LOG_INFO("PatchPhantomReturn: PATCHED exe+0x44ef7b — boss kill will no longer dismiss phantoms");
 }
 
+// ============================================================================
+// Increase the player cap from 3 to 6.
+//
+// Ghidra analysis (2026-04-04):
+//   FUN_1406ab050 is the JoinGuestPlayer message handler.
+//   At exe+0x6ab0b6: MOV dword ptr [RBP+local_6c], 0x3 (c7 45 c3 03 00 00 00)
+//   The 0x03 byte at exe+0x6ab0b9 is the player cap.
+//   Changing it to 0x06 allows up to 6 players.
+// ============================================================================
+static void PatchPlayerCap() {
+    uintptr_t exeBase = (uintptr_t)GetModuleHandle(nullptr);
+    // The full instruction is: c7 45 c3 03 00 00 00
+    // We verify the full 7 bytes but only change the 03 to 06
+    uintptr_t instrAddr = exeBase + 0x6ab0b6;
+
+    uint8_t expected[] = { 0xc7, 0x45, 0xc3, 0x03, 0x00, 0x00, 0x00 };
+    uint8_t actual[7] = {};
+
+    __try {
+        memcpy(actual, (void*)instrAddr, 7);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        LOG_ERROR("PatchPlayerCap: cannot read exe at 0x%llX", instrAddr);
+        return;
+    }
+
+    if (memcmp(actual, expected, 7) != 0) {
+        // Check if already patched (03 -> 06)
+        uint8_t patched[] = { 0xc7, 0x45, 0xc3, 0x06, 0x00, 0x00, 0x00 };
+        if (memcmp(actual, patched, 7) == 0) {
+            LOG_INFO("PatchPlayerCap: already patched (cap=6)");
+            return;
+        }
+        LOG_WARNING("PatchPlayerCap: bytes at exe+0x6ab0b6 don't match expected "
+                    "(got %02X %02X %02X %02X %02X %02X %02X) - skipping",
+                    actual[0], actual[1], actual[2], actual[3],
+                    actual[4], actual[5], actual[6]);
+        return;
+    }
+
+    DWORD oldProtect = 0;
+    if (!VirtualProtect((void*)instrAddr, 7, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+        LOG_ERROR("PatchPlayerCap: VirtualProtect failed (error %u)", GetLastError());
+        return;
+    }
+
+    // Change 0x03 to 0x06 at the immediate value position
+    *((uint8_t*)(instrAddr + 3)) = 0x06;
+    VirtualProtect((void*)instrAddr, 7, oldProtect, &oldProtect);
+
+    LOG_INFO("PatchPlayerCap: PATCHED exe+0x6ab0b9 (local_6c 3->6)");
+
+    // Second patch: the 0x3 written into the protobuf message struct at [RBX+0x1c]
+    // 1406ab15b: c7 43 1c 03 00 00 00  MOV dword ptr [RBX+0x1c], 0x3
+    uintptr_t msgAddr = exeBase + 0x6ab15b;
+    uint8_t expected2[] = { 0xc7, 0x43, 0x1c, 0x03, 0x00, 0x00, 0x00 };
+    uint8_t actual2[7] = {};
+
+    __try {
+        memcpy(actual2, (void*)msgAddr, 7);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        LOG_WARNING("PatchPlayerCap: cannot read second patch addr 0x%llX", msgAddr);
+        return;
+    }
+
+    if (memcmp(actual2, expected2, 7) == 0) {
+        DWORD oldProtect2 = 0;
+        VirtualProtect((void*)msgAddr, 7, PAGE_EXECUTE_READWRITE, &oldProtect2);
+        *((uint8_t*)(msgAddr + 3)) = 0x06;
+        VirtualProtect((void*)msgAddr, 7, oldProtect2, &oldProtect2);
+        LOG_INFO("PatchPlayerCap: PATCHED exe+0x6ab15e ([RBX+0x1c] 3->6) - protobuf MaxPlayers=6");
+    } else {
+        uint8_t patched2[] = { 0xc7, 0x43, 0x1c, 0x06, 0x00, 0x00, 0x00 };
+        if (memcmp(actual2, patched2, 7) == 0)
+            LOG_INFO("PatchPlayerCap: second patch already applied");
+        else
+            LOG_WARNING("PatchPlayerCap: second patch bytes mismatch at exe+0x6ab15b - skipping");
+    }
+}
+
 bool PlayerSync::Initialize() {
     if (m_initialized) return true;
 
@@ -92,6 +171,9 @@ bool PlayerSync::Initialize() {
 
     // Patch out boss-kill phantom dismissal
     PatchPhantomReturnOnBossKill();
+
+    // Increase player cap from 3 to 6
+    PatchPlayerCap();
 
     m_initialized = true;
     LOG_INFO("Player sync initialized");
