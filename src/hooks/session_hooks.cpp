@@ -18,6 +18,7 @@
 #include "../../include/network.h"
 #include "../../include/utils.h"
 #include "../../include/pattern_scanner.h"
+#include "../../include/address_resolver.h"
 #include "MinHook.h"
 #include <typeinfo>
 #include <string>
@@ -280,6 +281,49 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
     return g_originalSerialize(thisPtr, target);
 }
 
+// Plain C helper — no C++ objects, safe for SEH.
+// Reads phantom name from NetSessionManager into buf (UTF-8, null-terminated).
+static void TryReadPhantomName(char* buf, int bufLen) {
+    uintptr_t nsm = DS2Coop::AddressResolver::GetInstance().GetNetSessionManager();
+    if (!nsm) return;
+    __try {
+        uintptr_t pp = 0;
+        if (!DS2Coop::Utils::Memory::Read<uintptr_t>(nsm + 0x20, &pp) || !pp) return;
+        wchar_t wname[24] = {};
+        for (int i = 0; i < 23; i++) {
+            wchar_t ch = 0;
+            if (!DS2Coop::Utils::Memory::Read<wchar_t>(pp + 0x234 + i*2, &ch) || ch == 0) break;
+            if (ch < 0x20 || ch > 0x9FFF) return;
+            wname[i] = ch;
+        }
+        if (wname[0])
+            WideCharToMultiByte(CP_UTF8, 0, wname, -1, buf, bufLen-1, nullptr, nullptr);
+    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+}
+
+static void OnPhantomJoined() {
+    char nameBuf[64] = {};
+    TryReadPhantomName(nameBuf, sizeof(nameBuf));
+    std::string phantomName = nameBuf[0] ? nameBuf : "Phantom";
+    uint64_t phantomId = static_cast<uint64_t>(GetTickCount64()) ^ 0xDE1F1234ULL;
+    LOG_INFO("[SEAMLESS] Phantom entered world: %s (id=%llu)", phantomName.c_str(), phantomId);
+    DS2Coop::Session::SessionManager::GetInstance().AddPlayer(phantomId, phantomName);
+}
+
+static void OnPhantomLeft() {
+    LOG_INFO("[SEAMLESS] Phantom left world — removing from session");
+    auto& sm = DS2Coop::Session::SessionManager::GetInstance();
+    auto players = sm.GetPlayers();
+    auto* local = sm.GetLocalPlayer();
+    uint64_t localId = local ? local->playerId : 0;
+    for (const auto& p : players) {
+        if (p.playerId != localId) {
+            sm.RemovePlayer(p.playerId);
+            break;
+        }
+    }
+}
+
 // ============================================================================
 // HOOKED: ParseFromArray
 //
@@ -310,6 +354,13 @@ static bool __fastcall ParseHook(void* thisPtr, void* data, int size) {
         // Sign filtering disabled — we're on a private server, no randoms.
         // The old filter rejected entire SignList responses if ANY sign
         // contained a Steam ID not in the whitelist, breaking sign visibility.
+
+        // Detect phantom joining/leaving world via DS2 soapstone summon.
+        // Handled in helper functions to avoid C2712 (__try + C++ objects).
+        if (strstr(className, "NotifyJoinGuestPlayer"))
+            OnPhantomJoined();
+        if (strstr(className, "NotifyLeaveGuestPlayer") || strstr(className, "LeaveGuestPlayer"))
+            OnPhantomLeft();
     }
 
     return result;
