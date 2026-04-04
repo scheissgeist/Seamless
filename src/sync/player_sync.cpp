@@ -458,151 +458,124 @@ bool PlayerSync::MaxPhantomTimer() {
 }
 
 // ============================================================================
-// Enable summoning regardless of hollow state
-// Zeroes the hollowing byte so summon signs are visible and usable.
-// This also restores max HP (hollowing reduces it in DS2).
-// Only runs while seamless mode is active.
+// Enable summoning regardless of hollow state, and force host-equivalent
+// permissions for all players (bonfire, NPC, chest, fog wall access).
+// Runs every 5 seconds while seamless is active.
 // ============================================================================
 void PlayerSync::EnableSummoning() {
     if (!DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
-
-    // ==========================================================================
-    // CE-verified TeamType patch (2026-04-02)
-    //
-    // The game writes TeamType via: DarkSoulsII.exe+0xDF1719
-    //   movaps [rax+rdx-10], xmm0
-    // Value is 2 bytes (uint16): 0=Host, 513=WhitePhantom, 515=Sunbro, 1799=DarkSpirit
-    //
-    // We found the address at runtime via CE scanning (513 as phantom, 0 as host).
-    // The address is heap-allocated and changes per session, so we scan for it
-    // on first call, cache it, and write 0 every update.
-    // ==========================================================================
-
-    static uintptr_t s_teamTypeAddr = 0;
-    static int s_scanAttempts = 0;
-    static bool s_patched = false;
 
     auto& resolver = DS2Coop::AddressResolver::GetInstance();
     uintptr_t gmImp = resolver.GetGameManagerImp();
     if (!gmImp) return;
 
-    // If we already found the address, just keep writing 0
+    // ==========================================================================
+    // 1. TeamType patch (CE-verified, 2026-04-02)
+    //
+    // Heap-allocated uint16 written by DarkSoulsII.exe+0xDF1719.
+    // 0=Host, 513=WhitePhantom, 515=Sunbro, 1799=DarkSpirit.
+    // Scan for value 513 near player data, cache address, keep writing 0.
+    // ==========================================================================
+    static uintptr_t s_teamTypeAddr = 0;
+    static int s_scanAttempts = 0;
+    static bool s_teamTypeLogged = false;
+
     if (s_teamTypeAddr != 0) {
         __try {
             uint16_t val = 0;
             if (Memory::Read<uint16_t>(s_teamTypeAddr, &val)) {
                 if (val == 513 || val == 514 || val == 515 || val == 516) {
                     Memory::Write<uint16_t>(s_teamTypeAddr, (uint16_t)0);
-                    if (!s_patched) {
+                    if (!s_teamTypeLogged) {
                         LOG_INFO("TeamType PATCHED to Host (was %u) at 0x%llX", val, s_teamTypeAddr);
-                        s_patched = true;
+                        s_teamTypeLogged = true;
                     }
                 }
             } else {
-                // Address went stale, re-scan next time
                 s_teamTypeAddr = 0;
-                s_patched = false;
+                s_teamTypeLogged = false;
             }
         } __except(EXCEPTION_EXECUTE_HANDLER) {
             s_teamTypeAddr = 0;
-            s_patched = false;
+            s_teamTypeLogged = false;
         }
-        return;
-    }
+    } else if (s_scanAttempts <= 10) {
+        s_scanAttempts++;
+        __try {
+            uintptr_t searchBases[4] = {0};
+            int baseCount = 0;
 
-    // Scan for TeamType address — look for uint16 value 513 near the player data region
-    // We scan from GameManagerImp outward since TeamType is in player-related memory
-    if (s_scanAttempts > 10) return; // don't scan forever
-    s_scanAttempts++;
+            uintptr_t pd = 0;
+            if (Memory::Read<uintptr_t>(gmImp + 0x38, &pd) && pd)
+                searchBases[baseCount++] = pd;
 
-    __try {
-        // Follow GameManagerImp pointer chains to find the player data region
-        // then scan nearby for value 513
-        uintptr_t searchBases[4] = {0};
-        int baseCount = 0;
-
-        // Chain 1: GMImp -> +0x38 -> PlayerData
-        uintptr_t pd = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0x38, &pd) && pd) {
-            searchBases[baseCount++] = pd;
-        }
-        // Chain 2: GMImp -> +0x10 -> NetPlayerMgr
-        uintptr_t npm = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0x10, &npm) && npm) {
-            searchBases[baseCount++] = npm;
-            // Chain 3: NetPlayerMgr -> +0x18 -> LocalPlayer
-            uintptr_t lp = 0;
-            if (Memory::Read<uintptr_t>(npm + 0x18, &lp) && lp) {
-                searchBases[baseCount++] = lp;
+            uintptr_t npm = 0;
+            if (Memory::Read<uintptr_t>(gmImp + 0x10, &npm) && npm) {
+                searchBases[baseCount++] = npm;
+                uintptr_t lp = 0;
+                if (Memory::Read<uintptr_t>(npm + 0x18, &lp) && lp)
+                    searchBases[baseCount++] = lp;
             }
-        }
 
-        for (int b = 0; b < baseCount; b++) {
-            uintptr_t base = searchBases[b];
-            // Scan a wide range around the base (up to 64KB)
-            for (uintptr_t offset = 0; offset < 0x10000; offset += 2) {
-                uint16_t val = 0;
-                if (Memory::Read<uint16_t>(base + offset, &val)) {
-                    if (val == 513) {
-                        // Found a candidate — verify it's writable and stable
-                        // Try writing 0 and reading back
+            for (int b = 0; b < baseCount && s_teamTypeAddr == 0; b++) {
+                uintptr_t base = searchBases[b];
+                for (uintptr_t offset = 0; offset < 0x10000; offset += 2) {
+                    uint16_t val = 0;
+                    if (Memory::Read<uint16_t>(base + offset, &val) && val == 513) {
                         Memory::Write<uint16_t>(base + offset, (uint16_t)0);
                         uint16_t check = 0;
                         Memory::Read<uint16_t>(base + offset, &check);
                         if (check == 0) {
                             s_teamTypeAddr = base + offset;
-                            LOG_INFO("TeamType FOUND at 0x%llX (base 0x%llX + 0x%llX), was 513, set to 0",
-                                     s_teamTypeAddr, base, offset);
-                            s_patched = true;
-                            return;
+                            LOG_INFO("TeamType FOUND at 0x%llX (base+0x%llX), set to 0", s_teamTypeAddr, offset);
+                            break;
                         }
                     }
                 }
             }
-        }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {}
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    }
 
-    // Also set PhantomType to 0 via NetSession
+    // ==========================================================================
+    // 2. Phantom field — Bob Edition CT: NetSessionManager → [+0x20] → +0x1F4
+    //
+    // This is the field the game checks to determine if the local player is a
+    // phantom. Zeroing it makes the game treat the local player as the host
+    // for permission checks (bonfire, NPC, chest, fog wall).
+    // ==========================================================================
     uintptr_t netSession = resolver.GetNetSessionManager();
-    if (!netSession) return;
-
-    __try {
-        uintptr_t sessionPtr = 0;
-        if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::SessionPointer, &sessionPtr) && sessionPtr) {
-            uint32_t phantomType = 0xFF;
-            if (Memory::Read<uint32_t>(sessionPtr + Offsets::NetSession::PhantomType, &phantomType)) {
-                if (phantomType != 0) {
-                    Memory::Write<uint32_t>(sessionPtr + Offsets::NetSession::PhantomType, (uint32_t)0);
-                    LOG_INFO("EnableSummoning: set PhantomType to Normal (was %u)", phantomType);
+    if (netSession) {
+        __try {
+            uintptr_t playerPtr = 0;
+            if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::PlayerPointer, &playerPtr) && playerPtr) {
+                uint32_t phantomField = 0;
+                if (Memory::Read<uint32_t>(playerPtr + 0x1F4, &phantomField) && phantomField != 0) {
+                    Memory::Write<uint32_t>(playerPtr + 0x1F4, (uint32_t)0);
+                    LOG_INFO("EnableSummoning: Phantom field zeroed (was %u) via [NSM+0x20]+0x1F4", phantomField);
                 }
             }
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    }
 
-            // Zero the phantom/guest count so the game allows bonfire resting,
-            // NPC interaction, fog wall entry, etc. while in co-op.
-            // The game checks "if phantomCount > 0, block interaction."
-            // Try multiple known offsets for the phantom count field:
-            for (uint32_t countOff : { 0x24u, 0x28u, 0x1E0u, 0x1E4u, 0x1E8u, 0x1ECu }) {
-                int32_t count = 0;
-                if (Memory::Read<int32_t>(sessionPtr + countOff, &count)) {
-                    if (count > 0 && count <= 5) {
-                        Memory::Write<int32_t>(sessionPtr + countOff, 0);
-                    }
-                }
-            }
-        }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {}
-
-    // Also try zeroing phantom count via GameManagerImp pointer chains
+    // ==========================================================================
+    // 3. Bonfire access bits — Bob Edition CT:
+    //    GameManagerImp → [+0xD0] → [+0xB8] → +0x4C8, bits 4+5
+    //
+    // bit 4 = isBonfireStart, bit 5 = isBonfireLoop.
+    // The host bonfire restriction checks phantom count > 0. Separately,
+    // the phantom-side restriction checks these bits. Setting both forces
+    // the game to allow bonfire interaction regardless of session state.
+    // ==========================================================================
     __try {
-        // GameManagerImp -> +0x10 -> NetPlayerManager -> phantom count fields
-        uintptr_t netPlayerMgr = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0x10, &netPlayerMgr) && netPlayerMgr) {
-            for (uint32_t off : { 0x38u, 0x3Cu, 0x40u, 0x44u, 0x48u, 0x50u, 0x58u }) {
-                int32_t val = 0;
-                if (Memory::Read<int32_t>(netPlayerMgr + off, &val)) {
-                    // Phantom count is typically 1-5
-                    if (val > 0 && val <= 5) {
-                        Memory::Write<int32_t>(netPlayerMgr + off, 0);
+        uintptr_t ptr_d0 = 0, ptr_b8 = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0xD0, &ptr_d0) && ptr_d0) {
+            if (Memory::Read<uintptr_t>(ptr_d0 + 0xB8, &ptr_b8) && ptr_b8) {
+                uint32_t flags = 0;
+                if (Memory::Read<uint32_t>(ptr_b8 + 0x4C8, &flags)) {
+                    uint32_t newFlags = flags | (1u << 4) | (1u << 5);
+                    if (newFlags != flags) {
+                        Memory::Write<uint32_t>(ptr_b8 + 0x4C8, newFlags);
+                        LOG_INFO("EnableSummoning: isBonfireStart/Loop bits set (0x%X -> 0x%X)", flags, newFlags);
                     }
                 }
             }
