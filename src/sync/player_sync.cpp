@@ -97,10 +97,40 @@ static std::string WcharToUtf8(const wchar_t* buf) {
     return result;
 }
 
+// SEH helper: read name wchars into a plain array, no C++ objects
+static bool TryReadNameBuffer(uintptr_t addr, wchar_t* buf, int maxChars) {
+    __try {
+        for (int i = 0; i < maxChars; i++) {
+            wchar_t ch = 0;
+            if (!Memory::Read<wchar_t>(addr + i * 2, &ch) || ch == 0) break;
+            if (ch < 0x20 || ch > 0x9FFF) return false;
+            buf[i] = ch;
+        }
+        return true;
+    } __except(EXCEPTION_EXECUTE_HANDLER) {
+        return false;
+    }
+}
+
 static std::string ReadCharacterName() {
-    // Character name offset not yet verified for this game version.
-    // Return empty so callers fall back to "Host"/"Player".
-    return "";
+    // Try NetSessionManager → [+0x20] → +0x234 (wchar_t[32], Bob Edition CT)
+    auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    uintptr_t netSession = resolver.GetNetSessionManager();
+    if (!netSession) return "";
+
+    uintptr_t playerPtr = 0;
+    if (!Memory::Read<uintptr_t>(netSession + Offsets::NetSession::PlayerPointer, &playerPtr) || !playerPtr)
+        return "";
+
+    wchar_t nameBuf[32] = {};
+    if (!TryReadNameBuffer(playerPtr + Offsets::NetSession::PlayerName, nameBuf, 31))
+        return "";
+
+    std::string result = WcharToUtf8(nameBuf);
+    if (!result.empty()) {
+        LOG_INFO("[NAME] Character name from NetSession: %s", result.c_str());
+    }
+    return result;
 }
 
 static bool ReadPlayerPosition(float& x, float& y, float& z, float& rotY) {
@@ -163,11 +193,19 @@ void PlayerSync::Update(float deltaTime) {
             m_stateSyncTimer = 0.0f;
         }
 
-        // Silently keep phantom timer maxed and phantom type normal (every 5 seconds)
+        // Keep phantom timer maxed every 5s (infrequent is fine)
         if (m_phantomTimerRefresh >= 5.0f) {
             MaxPhantomTimer();
-            EnableSummoning();
             m_phantomTimerRefresh = 0.0f;
+        }
+
+        // Keep permission patches active every 1s — bonfire bits are checked
+        // every frame by the game, so 5s gaps cause intermittent blocking.
+        static float s_summoningTimer = 0.0f;
+        s_summoningTimer += deltaTime;
+        if (s_summoningTimer >= 1.0f) {
+            EnableSummoning();
+            s_summoningTimer = 0.0f;
         }
     }
     __except (EXCEPTION_EXECUTE_HANDLER) {

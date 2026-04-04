@@ -232,6 +232,9 @@ void SessionManager::AddPlayer(uint64_t playerId, const std::string& name) {
     // Show notification + play sound
     UI::Overlay::GetInstance().ShowNotification(name + " joined the session", 4.0f);
     PlaySoundW(L"SystemAsterisk", nullptr, SND_ALIAS | SND_ASYNC);
+
+    // Ensure seamless mode is active now that we have a real co-op partner
+    Hooks::ProtobufHooks::SetSeamlessActive(true);
 }
 
 void SessionManager::RemovePlayer(uint64_t playerId) {
@@ -254,6 +257,14 @@ void SessionManager::RemovePlayer(uint64_t playerId) {
     if (!name.empty()) {
         UI::Overlay::GetInstance().ShowNotification(name + " left the session", 4.0f);
         PlaySoundW(L"SystemExclamation", nullptr, SND_ALIAS | SND_ASYNC);
+    }
+
+    // If we're now alone (only local player remains), seamless blocking is no longer
+    // needed — re-enable it on the next connect. Keep it active for now so any
+    // in-flight messages from the departing player don't crash us, but show a notice.
+    if (m_players.size() <= 1) {
+        LOG_INFO("All remote players gone — session effectively solo");
+        UI::Overlay::GetInstance().ShowNotification("Session empty. Waiting for players...", 5.0f);
     }
 }
 
