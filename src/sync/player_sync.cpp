@@ -575,7 +575,44 @@ void PlayerSync::EnableSummoning() {
     }
 
     // ==========================================================================
-    // 3. Bonfire access bits — Bob Edition CT:
+    // 4. Session-slot TeamType — Bob Edition CT:
+    //    NetSessionManager → [+0x20] → [+0x1E8] → [+0xB0] → +0x4D (byte)
+    //
+    // The host's bonfire check reads TeamType for each session slot.
+    // If any slot has a non-zero TeamType (i.e. a phantom is present),
+    // bonfire rest is blocked. Zeroing +0x4D in all occupied slots
+    // makes the host's game believe it's alone in the world.
+    // ==========================================================================
+    if (netSession) {
+        __try {
+            uintptr_t playerPtr = 0;
+            if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::PlayerPointer, &playerPtr) && playerPtr) {
+                // Walk session participant list starting at +0x1E8
+                // Each entry is separated by an unknown stride — try 0x100 and 0x200
+                // (struct size is unknown without CE verification)
+                uintptr_t listBase = 0;
+                if (Memory::Read<uintptr_t>(playerPtr + 0x1E8, &listBase) && listBase) {
+                    for (int slot = 0; slot < 6; slot++) {
+                        uintptr_t entry = 0;
+                        if (Memory::Read<uintptr_t>(listBase + slot * 8, &entry) && entry) {
+                            // entry → [+0xB0] → +0x4D
+                            uintptr_t b0 = 0;
+                            if (Memory::Read<uintptr_t>(entry + 0xB0, &b0) && b0) {
+                                uint8_t slotTeamType = 0;
+                                if (Memory::Read<uint8_t>(b0 + 0x4D, &slotTeamType) && slotTeamType != 0) {
+                                    Memory::Write<uint8_t>(b0 + 0x4D, (uint8_t)0);
+                                    LOG_INFO("EnableSummoning: Session slot %d TeamType zeroed (was %u)", slot, slotTeamType);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } __except(EXCEPTION_EXECUTE_HANDLER) {}
+    }
+
+    // ==========================================================================
+    // 5. Bonfire access bits — Bob Edition CT:
     //    GameManagerImp → [+0xD0] → [+0xB8] → +0x4C8, bits 4+5
     //
     // bit 4 = isBonfireStart, bit 5 = isBonfireLoop.
