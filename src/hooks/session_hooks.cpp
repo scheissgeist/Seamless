@@ -188,14 +188,13 @@ static const char* GetRttiClassName(void* obj) {
 // Messages to block when SENDING (outgoing — serialize hook)
 // Don't block ANY outgoing messages — let them serialize and send normally.
 // Blocking outgoing messages corrupts the server's session state.
-// Block outgoing session-ending messages that the game sends after boss kills.
-// These messages tell the server "phantom is leaving" — blocking them keeps
-// the session alive on the server side too.
+// Outgoing disconnect blocking is OFF. Blocking the serialize return does NOT
+// prevent the game's internal phantom removal — the game destroys phantom objects
+// first, THEN sends the network notification. Blocking the notification leaves
+// the game with dangling pointers → crash. The correct fix is to NOP the
+// internal boss-kill phantom removal function in the exe (CE task).
 static bool IsOutgoingDisconnect(const char* className) {
-    if (!className) return false;
-    if (strstr(className, "LeaveGuestPlayer")) return true;
-    if (strstr(className, "LeaveSession")) return true;
-    if (strstr(className, "ReturnToWorld")) return true;
+    (void)className;
     return false;
 }
 
@@ -501,6 +500,8 @@ void ProtobufHooks::AddSessionSteamId(const std::string& steamId) {
 void ProtobufHooks::ClearSessionSteamIds() {
     std::lock_guard<std::mutex> lock(g_steamIdMutex);
     g_sessionSteamIds.clear();
+    g_phantomCounter.store(0);
+    g_blockedCount.store(0);
     LOG_INFO("[SEAMLESS] Cleared session Steam ID whitelist");
 }
 
