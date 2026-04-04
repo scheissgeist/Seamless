@@ -185,7 +185,18 @@ static std::string ReadCharacterName() {
         }
     }
 
-    // Return the first name we find (NSM path works for host)
+    // PATH 1: GMImp → [+0xA8] → +0x114 (wchar_t, LOCAL player's own name)
+    // Confirmed by Bob Edition CT + DS2S-META: OFLD(ANYSOTFS, STRBASEA, 0xa8, 0x114)
+    // This is the GameDataManager path — stores YOUR character name, not the host's.
+    if (gmImp) {
+        uintptr_t gdm = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0xA8, &gdm) && gdm) {
+            std::string name = TryReadNameFrom(gdm + 0x114, "GameDataMgr+0x114");
+            if (!name.empty()) return name;
+        }
+    }
+
+    // PATH 2: NSM → [+0x20] → +0x234 (host/opponent name — fallback only)
     if (netSession) {
         uintptr_t pp = 0;
         if (Memory::Read<uintptr_t>(netSession + 0x20, &pp) && pp) {
@@ -194,20 +205,12 @@ static std::string ReadCharacterName() {
         }
     }
 
+    // PATH 3: GMImp → [+0x38] → +0x24 (PlayerData path — legacy fallback)
     if (gmImp) {
         uintptr_t pd = 0;
         if (Memory::Read<uintptr_t>(gmImp + 0x38, &pd) && pd) {
             std::string name = TryReadNameFrom(pd + 0x24, "PlayerData+0x24");
             if (!name.empty()) return name;
-        }
-
-        uintptr_t pc = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0xD0, &pc) && pc) {
-            uintptr_t param = 0;
-            if (Memory::Read<uintptr_t>(pc + 0x490, &param) && param) {
-                std::string name = TryReadNameFrom(param + 0x24, "PlayerParam+0x24");
-                if (!name.empty()) return name;
-            }
         }
     }
 
