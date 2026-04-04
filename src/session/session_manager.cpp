@@ -119,6 +119,10 @@ bool SessionManager::JoinSession(const std::string& address, const std::string& 
         port = static_cast<uint16_t>(std::stoi(address.substr(colonPos + 1)));
     }
 
+    // Initialize sync systems BEFORE joining P2P so the handshake has the real name
+    Sync::PlayerSync::GetInstance().Initialize();
+    Sync::ProgressSync::GetInstance().Initialize();
+
     // Join network session
     auto& peerMgr = Network::PeerManager::GetInstance();
     if (!peerMgr.JoinSession(ip, port, password)) {
@@ -139,10 +143,6 @@ bool SessionManager::JoinSession(const std::string& address, const std::string& 
     localPlayer.health = 0;
     localPlayer.maxHealth = 0;
     localPlayer.x = localPlayer.y = localPlayer.z = 0.0f;
-
-    // Initialize sync systems first so we can read the character name
-    Sync::PlayerSync::GetInstance().Initialize();
-    Sync::ProgressSync::GetInstance().Initialize();
 
     std::string charName = Sync::PlayerSync::GetInstance().GetLocalCharacterName();
     localPlayer.playerName = charName.empty() ? "Player" : charName;

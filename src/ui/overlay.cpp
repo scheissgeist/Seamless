@@ -259,7 +259,7 @@ void Overlay::RenderMainMenu() {
             // Name + (you) tag
             if (isLocal)
                 ImGui::TextColored(ImVec4(0.6f, 1.0f, 0.6f, 1.0f), "%s  (you)", p.playerName.c_str());
-            else if (!p.isAlive)
+            else if (!p.isAlive && p.maxHealth > 0)
                 ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "%s  [dead]", p.playerName.c_str());
             else
                 ImGui::Text("%s", p.playerName.c_str());

@@ -28,7 +28,7 @@ using namespace DS2Coop::Utils;
 
 constexpr uint32_t PACKET_MAGIC = 0x44533243; // 'DS2C'
 constexpr uint64_t HEARTBEAT_INTERVAL_MS = 5000;
-constexpr uint64_t TIMEOUT_DURATION_MS = 15000;
+constexpr uint64_t TIMEOUT_DURATION_MS = 60000; // 60s — peers on Hamachi can have bursty latency
 
 static uint64_t NowMs() {
     return std::chrono::duration_cast<std::chrono::milliseconds>(
