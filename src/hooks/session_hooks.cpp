@@ -188,9 +188,14 @@ static const char* GetRttiClassName(void* obj) {
 // Messages to block when SENDING (outgoing — serialize hook)
 // Don't block ANY outgoing messages — let them serialize and send normally.
 // Blocking outgoing messages corrupts the server's session state.
-// All disconnect prevention happens on the RECEIVING side (parse hook).
+// Block outgoing session-ending messages that the game sends after boss kills.
+// These messages tell the server "phantom is leaving" — blocking them keeps
+// the session alive on the server side too.
 static bool IsOutgoingDisconnect(const char* className) {
-    (void)className;
+    if (!className) return false;
+    if (strstr(className, "LeaveGuestPlayer")) return true;
+    if (strstr(className, "LeaveSession")) return true;
+    if (strstr(className, "ReturnToWorld")) return true;
     return false;
 }
 
@@ -243,17 +248,12 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
             g_blockedCount++;
             LOG_INFO("[SEAMLESS] BLOCKED outgoing: %s (total: %u)", className, g_blockedCount.load());
 
-            // Let the serialize happen so the buffer advances correctly
-            // (returning target unchanged crashes the game's state machine).
-            // The message will serialize but we'll mark it for the network
-            // layer to drop. For now, let it serialize — the incoming block
-            // on the receiving side prevents the actual disconnect.
-            uint8_t* result = g_originalSerialize(thisPtr, target);
-            // Zero the serialized bytes so the message is corrupt/empty
-            if (result > target) {
-                memset(target, 0, result - target);
-            }
-            return result;
+            // Let the serialize run so the game's internal state stays consistent,
+            // but return the original target pointer so zero bytes are added to
+            // the output buffer. The network layer sees an empty message and skips it.
+            // Previous approach of memset-zeroing corrupted the protobuf stream.
+            g_originalSerialize(thisPtr, target);
+            return target;
         }
 
         if (IsDeathMessage(className)) {
