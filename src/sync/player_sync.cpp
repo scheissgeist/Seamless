@@ -575,21 +575,10 @@ void PlayerSync::EnableSummoning() {
     }
 
     // ==========================================================================
-    // 2. Hollowing — Bob Edition CT: GameManagerImp → [+0x38] → +0x1AC (byte)
-    //
-    // Hollowing reduces max HP and hides the player's summon sign from others.
-    // Zeroing it makes the player fully human for the entire session.
+    // 2. Hollowing — DISABLED: caused crash (wrote 0 to wrong field, value was
+    // 244 which suggests offset 0x1AC is not hollowing in this build).
+    // Needs CE re-verification before re-enabling.
     // ==========================================================================
-    __try {
-        uintptr_t playerData = 0;
-        if (Memory::Read<uintptr_t>(gmImp + Offsets::GameManager::PlayerData, &playerData) && playerData) {
-            uint8_t hollowing = 0;
-            if (Memory::Read<uint8_t>(playerData + Offsets::GameManager::Hollowing, &hollowing) && hollowing > 0) {
-                Memory::Write<uint8_t>(playerData + Offsets::GameManager::Hollowing, (uint8_t)0);
-                LOG_INFO("EnableSummoning: Hollowing zeroed (was %u) — player now human", hollowing);
-            }
-        }
-    } __except(EXCEPTION_EXECUTE_HANDLER) {}
 
     // ==========================================================================
     // 3. Phantom field — Bob Edition CT: NetSessionManager → [+0x20] → +0x1F4
