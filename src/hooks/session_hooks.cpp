@@ -278,14 +278,6 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
                  g_seamlessActive.load() ? "ON" : "OFF");
     }
 
-    // Detect phantom joining OUR world from outgoing messages.
-    // NotifyJoinGuestPlayer outgoing = a phantom entered OUR world (we're host).
-    // NotifyJoinSession is US joining — don't add ourselves.
-    if (g_seamlessActive.load()) {
-        if (strstr(className, "NotifyJoinGuestPlayer"))
-            OnPhantomJoined();
-    }
-
     // Capture call stack when the game tries to send LeaveGuestPlayer or LeaveSession
     // This tells us which function initiates phantom removal after boss kills.
     if (strstr(className, "LeaveGuestPlayer") || strstr(className, "LeaveSession")) {

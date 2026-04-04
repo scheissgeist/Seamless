@@ -1,0 +1,53 @@
+======================================================================
+DS2 SotFS Ghidra Analysis - Seamless Co-op
+Base: 140000000
+======================================================================
+
+### 1. Player cap: CMP 2/3/4 in GuestPlayer functions ###
+GuestPlayer string hits: 8
+
+### 2. Fog wall / boss gate strings ###
+
+### 3. Phantom damage / hit validation ###
+'DamageParam': 1 hits
+  141580b04
+
+### 4. Session/max player strings ###
+
+### 5. RTTI class names ###
+Class 'EventPhantomReturn':
+  RTTI at 14156a7d4 (offset +0x156A7D4)
+Class 'PhantomManager':
+  RTTI at 1415758c2 (offset +0x15758C2)
+Class 'SummonManager':
+  RTTI at 1415792aa (offset +0x15792AA)
+Class 'SessionManager':
+  RTTI at 1415886ef (offset +0x15886EF)
+  RTTI at 141588718 (offset +0x1588718)
+  RTTI at 14158875d (offset +0x158875D)
+  RTTI at 1415c1f1e (offset +0x15C1F1E)
+  RTTI at 1415c26ac (offset +0x15C26AC)
+  RTTI at 1415c27ec (offset +0x15C27EC)
+  RTTI at 1415c2e81 (offset +0x15C2E81)
+  RTTI at 1415c36ae (offset +0x15C36AE)
+Class 'NetSessionManager':
+  RTTI at 1415886ec (offset +0x15886EC)
+  RTTI at 141588715 (offset +0x1588715)
+  RTTI at 14158875a (offset +0x158875A)
+Class 'EventBossBattle':
+  RTTI at 14156a344 (offset +0x156A344)
+
+### 6. Verify boss-kill patch ###
+Bytes at exe+0x44ef7b: e8 30 2c d4 ff
+MATCH - patch target confirmed
+
+### 7. NotifyJoinGuestPlayer vtable location ###
+RequestNotifyJoinGuestPlayer strings: 4
+  at 14120d04c (offset +0x120D04C)
+  at 14120d084 (offset +0x120D084)
+  at 14158f5a4 (offset +0x158F5A4)
+  at 1415e4f44 (offset +0x15E4F44)
+
+======================================================================
+Done.
+======================================================================

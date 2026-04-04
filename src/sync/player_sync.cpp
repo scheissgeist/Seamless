@@ -177,66 +177,8 @@ static std::string TryReadNameFrom(uintptr_t addr, const char* source) {
 
 static std::string ReadCharacterName() {
     auto& resolver = DS2Coop::AddressResolver::GetInstance();
-    static bool s_loggedDiagnostic = false;
-
     uintptr_t gmImp = resolver.GetGameManagerImp();
     uintptr_t netSession = resolver.GetNetSessionManager();
-
-    // Diagnostic: scan multiple paths on first call and log ALL results
-    if (!s_loggedDiagnostic && gmImp && netSession) {
-        s_loggedDiagnostic = true;
-        LOG_INFO("[NAME-SCAN] Trying all known name paths...");
-
-        // NSM → [+0x20] → +0x234
-        uintptr_t pp = 0;
-        if (Memory::Read<uintptr_t>(netSession + 0x20, &pp) && pp) {
-            TryReadNameFrom(pp + 0x234, "NSM[+0x20]+0x234");
-            // Also try nearby offsets — the name array might be at a different position
-            TryReadNameFrom(pp + 0x100, "NSM[+0x20]+0x100");
-            TryReadNameFrom(pp + 0x1A0, "NSM[+0x20]+0x1A0");
-            TryReadNameFrom(pp + 0x2A0, "NSM[+0x20]+0x2A0");
-        }
-
-        // NSM → [+0x18] → name offsets (SessionPointer path)
-        uintptr_t sp = 0;
-        if (Memory::Read<uintptr_t>(netSession + 0x18, &sp) && sp) {
-            TryReadNameFrom(sp + 0x234, "NSM[+0x18]+0x234");
-            TryReadNameFrom(sp + 0x100, "NSM[+0x18]+0x100");
-        }
-
-        // GMImp → [+0x38] (PlayerData) → name offsets
-        uintptr_t pd = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0x38, &pd) && pd) {
-            TryReadNameFrom(pd + 0x24, "GMImp[+0x38]+0x24");
-            TryReadNameFrom(pd + 0xA4, "GMImp[+0x38]+0xA4");
-        }
-
-        // GMImp → [+0xD0] (PlayerCtrl) → various sub-paths
-        uintptr_t pc = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0xD0, &pc) && pc) {
-            // PlayerParam at +0x490
-            uintptr_t param = 0;
-            if (Memory::Read<uintptr_t>(pc + 0x490, &param) && param) {
-                TryReadNameFrom(param + 0x24, "PlayerCtrl[+0x490]+0x24");
-                TryReadNameFrom(param + 0xA4, "PlayerCtrl[+0x490]+0xA4");
-            }
-        }
-
-        // GMImp → [+0xA8] (GameDataManager) → save data name
-        uintptr_t gdm = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0xA8, &gdm) && gdm) {
-            uintptr_t sub1 = 0;
-            if (Memory::Read<uintptr_t>(gdm + 0x10, &sub1) && sub1) {
-                TryReadNameFrom(sub1 + 0x24, "GameDataMgr[+0x10]+0x24");
-                TryReadNameFrom(sub1 + 0x100, "GameDataMgr[+0x10]+0x100");
-                uintptr_t sub2 = 0;
-                if (Memory::Read<uintptr_t>(sub1 + 0x10, &sub2) && sub2) {
-                    TryReadNameFrom(sub2 + 0x24, "GameDataMgr[+0x10][+0x10]+0x24");
-                    TryReadNameFrom(sub2 + 0x100, "GameDataMgr[+0x10][+0x10]+0x100");
-                }
-            }
-        }
-    }
 
     // PATH 1: GMImp → [+0xA8] → +0x114 (wchar_t, LOCAL player's own name)
     // Confirmed by Bob Edition CT + DS2S-META: OFLD(ANYSOTFS, STRBASEA, 0xa8, 0x114)
