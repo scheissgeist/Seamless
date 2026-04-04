@@ -231,6 +231,10 @@ static bool IsDeathMessage(const char* className) {
     return false;
 }
 
+// Forward declarations for helpers defined below ParseHook
+static void OnPhantomJoined();
+static void OnPhantomLeft();
+
 // ============================================================================
 // HOOKED: SerializeWithCachedSizesToArray
 //
@@ -277,6 +281,14 @@ static uint8_t* __fastcall SerializeHook(void* thisPtr, uint8_t* target) {
                  g_seamlessActive.load() ? "ON" : "OFF");
     }
 
+    // Detect phantom joining OUR world from outgoing messages.
+    // NotifyJoinGuestPlayer outgoing = a phantom entered OUR world (we're host).
+    // NotifyJoinSession is US joining — don't add ourselves.
+    if (g_seamlessActive.load()) {
+        if (strstr(className, "NotifyJoinGuestPlayer"))
+            OnPhantomJoined();
+    }
+
     // Call original for all non-blocked messages
     return g_originalSerialize(thisPtr, target);
 }
@@ -301,13 +313,19 @@ static void TryReadPhantomName(char* buf, int bufLen) {
     } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }
 
+static std::atomic<int> g_phantomCounter{0};
+
 static void OnPhantomJoined() {
-    char nameBuf[64] = {};
-    TryReadPhantomName(nameBuf, sizeof(nameBuf));
-    std::string phantomName = nameBuf[0] ? nameBuf : "Phantom";
-    uint64_t phantomId = static_cast<uint64_t>(GetTickCount64()) ^ 0xDE1F1234ULL;
-    LOG_INFO("[SEAMLESS] Phantom entered world: %s (id=%llu)", phantomName.c_str(), phantomId);
-    DS2Coop::Session::SessionManager::GetInstance().AddPlayer(phantomId, phantomName);
+    // Don't read name from NSM+0x20+0x234 — that's always the LOCAL player's name.
+    // Use a numbered placeholder. P2P handshake will update the name if it connects.
+    int num = ++g_phantomCounter;
+    char nameBuf[32];
+    snprintf(nameBuf, sizeof(nameBuf), "Phantom %d", num);
+
+    // Use a deterministic-ish ID that won't collide with the local player ID
+    uint64_t phantomId = static_cast<uint64_t>(GetTickCount64()) ^ (0xDE1F0000ULL + num);
+    LOG_INFO("[SEAMLESS] Phantom entered world: %s (id=%llu)", nameBuf, phantomId);
+    DS2Coop::Session::SessionManager::GetInstance().AddPlayer(phantomId, nameBuf);
 }
 
 static void OnPhantomLeft() {
@@ -337,10 +355,13 @@ static bool __fastcall ParseHook(void* thisPtr, void* data, int size) {
     if (result) {
         const char* className = GetRttiClassName(thisPtr);
 
-        // Log session-related incoming messages
+        // Log ALL session-related incoming messages (INFO level for debugging)
         if (strstr(className, "Session") || strstr(className, "Guest") ||
-            strstr(className, "Sign") || strstr(className, "BreakIn")) {
-            LOG_DEBUG("[PROTOBUF <<] %s (size: %d)", className, size);
+            strstr(className, "Sign") || strstr(className, "BreakIn") ||
+            strstr(className, "Summon") || strstr(className, "Push") ||
+            strstr(className, "Join") || strstr(className, "Leave") ||
+            strstr(className, "Phantom") || strstr(className, "Remove")) {
+            LOG_INFO("[PROTOBUF <<] %s (size: %d)", className, size);
         }
 
         // If we receive a disconnect push from the server while seamless is active,
