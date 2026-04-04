@@ -124,34 +124,88 @@ static std::string TryReadNameFrom(uintptr_t addr, const char* source) {
 
 static std::string ReadCharacterName() {
     auto& resolver = DS2Coop::AddressResolver::GetInstance();
+    static bool s_loggedDiagnostic = false;
 
-    // Path 1: NetSessionManager → [+0x20] → +0x234 (wchar_t)
-    // This is the HOST's name when you're a phantom, YOUR name when you're host.
+    uintptr_t gmImp = resolver.GetGameManagerImp();
     uintptr_t netSession = resolver.GetNetSessionManager();
+
+    // Diagnostic: scan multiple paths on first call and log ALL results
+    if (!s_loggedDiagnostic && gmImp && netSession) {
+        s_loggedDiagnostic = true;
+        LOG_INFO("[NAME-SCAN] Trying all known name paths...");
+
+        // NSM → [+0x20] → +0x234
+        uintptr_t pp = 0;
+        if (Memory::Read<uintptr_t>(netSession + 0x20, &pp) && pp) {
+            TryReadNameFrom(pp + 0x234, "NSM[+0x20]+0x234");
+            // Also try nearby offsets — the name array might be at a different position
+            TryReadNameFrom(pp + 0x100, "NSM[+0x20]+0x100");
+            TryReadNameFrom(pp + 0x1A0, "NSM[+0x20]+0x1A0");
+            TryReadNameFrom(pp + 0x2A0, "NSM[+0x20]+0x2A0");
+        }
+
+        // NSM → [+0x18] → name offsets (SessionPointer path)
+        uintptr_t sp = 0;
+        if (Memory::Read<uintptr_t>(netSession + 0x18, &sp) && sp) {
+            TryReadNameFrom(sp + 0x234, "NSM[+0x18]+0x234");
+            TryReadNameFrom(sp + 0x100, "NSM[+0x18]+0x100");
+        }
+
+        // GMImp → [+0x38] (PlayerData) → name offsets
+        uintptr_t pd = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0x38, &pd) && pd) {
+            TryReadNameFrom(pd + 0x24, "GMImp[+0x38]+0x24");
+            TryReadNameFrom(pd + 0xA4, "GMImp[+0x38]+0xA4");
+        }
+
+        // GMImp → [+0xD0] (PlayerCtrl) → various sub-paths
+        uintptr_t pc = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0xD0, &pc) && pc) {
+            // PlayerParam at +0x490
+            uintptr_t param = 0;
+            if (Memory::Read<uintptr_t>(pc + 0x490, &param) && param) {
+                TryReadNameFrom(param + 0x24, "PlayerCtrl[+0x490]+0x24");
+                TryReadNameFrom(param + 0xA4, "PlayerCtrl[+0x490]+0xA4");
+            }
+        }
+
+        // GMImp → [+0xA8] (GameDataManager) → save data name
+        uintptr_t gdm = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0xA8, &gdm) && gdm) {
+            uintptr_t sub1 = 0;
+            if (Memory::Read<uintptr_t>(gdm + 0x10, &sub1) && sub1) {
+                TryReadNameFrom(sub1 + 0x24, "GameDataMgr[+0x10]+0x24");
+                TryReadNameFrom(sub1 + 0x100, "GameDataMgr[+0x10]+0x100");
+                uintptr_t sub2 = 0;
+                if (Memory::Read<uintptr_t>(sub1 + 0x10, &sub2) && sub2) {
+                    TryReadNameFrom(sub2 + 0x24, "GameDataMgr[+0x10][+0x10]+0x24");
+                    TryReadNameFrom(sub2 + 0x100, "GameDataMgr[+0x10][+0x10]+0x100");
+                }
+            }
+        }
+    }
+
+    // Return the first name we find (NSM path works for host)
     if (netSession) {
-        uintptr_t playerPtr = 0;
-        if (Memory::Read<uintptr_t>(netSession + Offsets::NetSession::PlayerPointer, &playerPtr) && playerPtr) {
-            std::string name = TryReadNameFrom(playerPtr + Offsets::NetSession::PlayerName, "NetSession+0x234");
+        uintptr_t pp = 0;
+        if (Memory::Read<uintptr_t>(netSession + 0x20, &pp) && pp) {
+            std::string name = TryReadNameFrom(pp + 0x234, "NetSession+0x234");
             if (!name.empty()) return name;
         }
     }
 
-    // Path 2: GameManagerImp → [+0x38] (PlayerData) → +0x24 (wchar_t)
-    // Direct character name from player data.
-    uintptr_t gmImp = resolver.GetGameManagerImp();
     if (gmImp) {
-        uintptr_t playerData = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0x38, &playerData) && playerData) {
-            std::string name = TryReadNameFrom(playerData + 0x24, "PlayerData+0x24");
+        uintptr_t pd = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0x38, &pd) && pd) {
+            std::string name = TryReadNameFrom(pd + 0x24, "PlayerData+0x24");
             if (!name.empty()) return name;
         }
 
-        // Path 3: GameManagerImp → [+0xD0] (PlayerCtrl) → [+0x490] (PlayerParam) → +0x24
-        uintptr_t playerCtrl = 0;
-        if (Memory::Read<uintptr_t>(gmImp + 0xD0, &playerCtrl) && playerCtrl) {
-            uintptr_t playerParam = 0;
-            if (Memory::Read<uintptr_t>(playerCtrl + 0x490, &playerParam) && playerParam) {
-                std::string name = TryReadNameFrom(playerParam + 0x24, "PlayerParam+0x24");
+        uintptr_t pc = 0;
+        if (Memory::Read<uintptr_t>(gmImp + 0xD0, &pc) && pc) {
+            uintptr_t param = 0;
+            if (Memory::Read<uintptr_t>(pc + 0x490, &param) && param) {
+                std::string name = TryReadNameFrom(param + 0x24, "PlayerParam+0x24");
                 if (!name.empty()) return name;
             }
         }
