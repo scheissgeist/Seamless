@@ -579,6 +579,23 @@ void PlayerSync::EnableSummoning() {
                     }
                 }
             }
+
+            // ==========================================================================
+            // 4. ChrNetworkPhantomId — Bob Edition CT:
+            //    GameManagerImp → [+0xD0] → [+0xB0] → +0x3C (byte)
+            //
+            // This byte controls phantom rendering (ghostly white appearance).
+            // 0 = normal player rendering, non-zero = phantom appearance.
+            // Zeroing it makes all players appear as solid/normal.
+            // ==========================================================================
+            uintptr_t ptr_b0 = 0;
+            if (Memory::Read<uintptr_t>(ptr_d0 + 0xB0, &ptr_b0) && ptr_b0) {
+                uint8_t phantomId = 0;
+                if (Memory::Read<uint8_t>(ptr_b0 + 0x3C, &phantomId) && phantomId != 0) {
+                    Memory::Write<uint8_t>(ptr_b0 + 0x3C, (uint8_t)0);
+                    LOG_INFO("EnableSummoning: ChrNetworkPhantomId zeroed (was %u) — solid appearance", phantomId);
+                }
+            }
         }
     } __except(EXCEPTION_EXECUTE_HANDLER) {}
 }

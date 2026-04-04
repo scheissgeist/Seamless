@@ -204,6 +204,14 @@ static bool IsIncomingDisconnect(const char* className) {
     if (strstr(className, "BanishPlayer")) return true;
     if (strstr(className, "BreakInTarget")) return true;
     if (strstr(className, "RemovePlayer")) return true;
+    // When a phantom uses the Black Separation Crystal, the server sends
+    // PushRequestRemoveSign to the host. The host's game processes this as
+    // "phantom is gone" and tries to tear down the active session — crash.
+    // Block it so the host doesn't process the departure at all.
+    if (strstr(className, "RemoveSign")) return true;
+    // RejectSign can also carry a "phantom returned home" state that crashes
+    // the host when processed mid-session.
+    if (strstr(className, "RejectSign")) return true;
     return false;
 }
 
