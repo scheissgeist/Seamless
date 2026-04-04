@@ -492,6 +492,12 @@ void PeerManager::SendHeartbeats() {
 }
 
 void PeerManager::CheckTimeouts() {
+    // When seamless mode is active, don't remove players on P2P timeout.
+    // The actual game session runs through ds3os — P2P UDP heartbeats are
+    // unreliable over Hamachi. Removing players on timeout causes the HUD
+    // to flicker and show "Session empty" while everyone is still playing.
+    if (DS2Coop::Hooks::ProtobufHooks::IsSeamlessActive()) return;
+
     uint64_t now = NowMs();
 
     auto it = m_peers.begin();
@@ -499,11 +505,9 @@ void PeerManager::CheckTimeouts() {
         if (it->connected && (now - it->lastHeartbeat > TIMEOUT_DURATION_MS)) {
             LOG_WARNING("Peer %s (ID: %llu) timed out", it->playerName.c_str(), it->playerId);
 
-            // Notify session manager so the player is removed from the list
             uint64_t id = it->playerId;
             it = m_peers.erase(it);
 
-            // Remove from session (outside peer loop is fine — we already erased)
             DS2Coop::Session::SessionManager::GetInstance().RemovePlayer(id);
         } else {
             ++it;
