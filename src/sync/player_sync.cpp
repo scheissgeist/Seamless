@@ -170,7 +170,13 @@ bool PlayerSync::Initialize() {
     }
 
     // Patch out boss-kill phantom dismissal
-    PatchPhantomReturnOnBossKill();
+    // DISABLED 2026-04-06: NOPing the CALL at exe+0x44ef7b inside FUN_14044ef30
+    // (the game's event dispatch function) is suspected of breaking death/respawn
+    // because the same dispatcher handles multiple event types, not just boss
+    // kills. With this enabled, dying leaves the player in a half-state with
+    // no respawn and the pause menu unable to open. Re-enable only after
+    // narrowing the patch to a more specific call site.
+    // PatchPhantomReturnOnBossKill();
 
     // Increase player cap from 3 to 6
     PatchPlayerCap();
