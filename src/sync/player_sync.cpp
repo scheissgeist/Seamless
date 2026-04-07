@@ -77,6 +77,96 @@ static void PatchPhantomReturnOnBossKill() {
 }
 
 // ============================================================================
+// NOP the per-phantom dismissal CALLs inside FUN_140191bb0.
+//
+// Ghidra analysis (2026-04-06):
+//   The previous PatchPhantomReturnOnBossKill NOPed the entire CALL to
+//   FUN_140191bb0 at exe+0x44ef7b. That broke death/respawn because
+//   FUN_140191bb0 sets a completion flag at [RSI+0x24]=1 in its epilogue
+//   that the death state machine waits for. Skipping the whole call left
+//   the player permanently dead-but-not-respawning, with the pause menu
+//   unable to open.
+//
+//   The fix is more surgical: NOP only the per-phantom dismissal CALLs
+//   INSIDE FUN_140191bb0's two iteration loops. The function still runs,
+//   the loops still iterate (they just do nothing per phantom), and the
+//   epilogue still sets the completion flag. Death proceeds normally,
+//   boss kills no longer dismiss phantoms.
+//
+//   FUN_140191bb0 structure (Ghidra disassembly):
+//     +0x191bb0  prologue, allocates EventPhantomReturn objects
+//     +0x191c80  loop 1: for each phantom in [RSI+0x28..+0x30]:
+//     +0x191c87    CALL FUN_140190410       <-- DISMISSAL CALL #1
+//     +0x191c8c    advance pointer
+//     +0x191c93    loop back
+//     +0x191d10  loop 2: for each phantom in [RSI+0x48..+0x50]:
+//     +0x191d17    CALL FUN_14018dea0       <-- DISMISSAL CALL #2
+//     +0x191d1c    advance pointer
+//     +0x191d23    loop back
+//     +0x191d8d  MOV byte ptr [RSI+0x24],0x1  <-- COMPLETION FLAG (must run)
+//     +0x191d98  RET
+//
+//   Both CALLs are 5-byte near calls (E8 + 4-byte rel32). NOPing them
+//   leaves the loops intact but turns each iteration into a no-op.
+//
+// Confirmed by ghidra_phantom_return_results.txt (Apr 6 run).
+// ============================================================================
+static void PatchPhantomDismissalLoops() {
+    uintptr_t exeBase = (uintptr_t)GetModuleHandle(nullptr);
+
+    struct PatchSite {
+        const char* label;
+        uintptr_t offset;
+    };
+
+    PatchSite sites[] = {
+        { "loop1 dismissal", 0x191c87 },  // CALL FUN_140190410
+        { "loop2 dismissal", 0x191d17 },  // CALL FUN_14018dea0
+    };
+
+    for (auto& site : sites) {
+        uintptr_t addr = exeBase + site.offset;
+        uint8_t actual[5] = {};
+
+        __try {
+            memcpy(actual, (void*)addr, 5);
+        } __except(EXCEPTION_EXECUTE_HANDLER) {
+            LOG_ERROR("PatchDismissal: cannot read exe at 0x%llX (%s)", addr, site.label);
+            continue;
+        }
+
+        // Already-patched check (5x NOP)
+        uint8_t nops[] = { 0x90, 0x90, 0x90, 0x90, 0x90 };
+        if (memcmp(actual, nops, 5) == 0) {
+            LOG_INFO("PatchDismissal: %s at exe+0x%llX already NOPed", site.label, site.offset);
+            continue;
+        }
+
+        // Verify first byte is a near CALL (E8). We don't verify the
+        // full 4-byte offset because Ghidra base relocation may differ
+        // from runtime — but the opcode E8 is the discriminator.
+        if (actual[0] != 0xe8) {
+            LOG_WARNING("PatchDismissal: %s at exe+0x%llX expected CALL (E8), got %02X — skipping",
+                        site.label, site.offset, actual[0]);
+            continue;
+        }
+
+        DWORD oldProtect = 0;
+        if (!VirtualProtect((void*)addr, 5, PAGE_EXECUTE_READWRITE, &oldProtect)) {
+            LOG_ERROR("PatchDismissal: VirtualProtect failed at 0x%llX (error %u)",
+                      addr, GetLastError());
+            continue;
+        }
+
+        memset((void*)addr, 0x90, 5);
+        VirtualProtect((void*)addr, 5, oldProtect, &oldProtect);
+
+        LOG_INFO("PatchDismissal: PATCHED %s at exe+0x%llX (NOPed dismissal call)",
+                 site.label, site.offset);
+    }
+}
+
+// ============================================================================
 // Increase the player cap from 3 to 6.
 //
 // Ghidra analysis (2026-04-04):
@@ -169,14 +259,14 @@ bool PlayerSync::Initialize() {
                  reinterpret_cast<void*>(resolver.GetGameManagerImp()));
     }
 
-    // Patch out boss-kill phantom dismissal
-    // DISABLED 2026-04-06: NOPing the CALL at exe+0x44ef7b inside FUN_14044ef30
-    // (the game's event dispatch function) is suspected of breaking death/respawn
-    // because the same dispatcher handles multiple event types, not just boss
-    // kills. With this enabled, dying leaves the player in a half-state with
-    // no respawn and the pause menu unable to open. Re-enable only after
-    // narrowing the patch to a more specific call site.
-    // PatchPhantomReturnOnBossKill();
+    // Patch out boss-kill phantom dismissal — surgical version.
+    // The old PatchPhantomReturnOnBossKill() NOPed the whole call to
+    // FUN_140191bb0 and broke death/respawn because that function's
+    // epilogue sets a completion flag the death state machine waits for.
+    // PatchPhantomDismissalLoops() instead NOPs only the per-phantom
+    // dismissal CALLs inside FUN_140191bb0's two iteration loops, so
+    // the function still runs to completion and sets the flag.
+    PatchPhantomDismissalLoops();
 
     // Increase player cap from 3 to 6
     PatchPlayerCap();
