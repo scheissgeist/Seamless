@@ -197,20 +197,39 @@ static bool IsOutgoingDisconnect(const char* className) {
 }
 
 // Messages to block when RECEIVING (incoming — parse hook)
-// Block server-initiated disconnects that would kick remaining players
-// when one player leaves via crystal.
+//
+// HISTORY: This list used to also block LeaveSession, LeaveGuestPlayer,
+// RemovePlayer, and BreakInTarget. Those entries were the *original* fix for
+// boss-kill phantom dismissal — the server would push LeaveGuestPlayer after
+// a boss kill and we'd intercept it. That fix was later REPLACED by the
+// runtime NOP patch at exe+0x44ef7b (commit 8c0f792, PatchPhantomReturnOnBossKill)
+// which prevents the boss-kill code from ever generating the dismiss event in
+// the first place. The block-list entries were left in place as vestigial
+// belt-and-suspenders, but it turned out they were catching DS2's normal
+// death/respawn flow as collateral damage: the death state machine sends a
+// LeaveSession-style round-trip and waits for the ack to advance to respawn.
+// Blocking it leaves the player permanently dead-but-not-respawning, with
+// the camera free to rotate around the corpse and the pause menu unable to
+// open (DS2's input arbiter is also waiting on the same round-trip).
+//
+// CURRENT POLICY: only block the messages tied to documented host-crash
+// bugs that have NO other fix:
+//   - DisconnectSession  : server-initiated forced disconnect
+//   - BanishPlayer       : server kicking us
+//   - RemoveSign / RejectSign : crystal/homeward bone host crash
+//     (commit dd10dea — phantom departs mid-session, server pushes sign
+//     teardown, host processes it as "phantom gone" and crashes)
+//
+// Phantom join/leave detection now happens AFTER the original parser runs
+// via OnPhantomJoined() / OnPhantomLeft() in ParseHook — those still fire
+// correctly because we let the message through.
 static bool IsIncomingDisconnect(const char* className) {
     if (!className) return false;
     if (strstr(className, "DisconnectSession")) return true;
-    if (strstr(className, "LeaveGuestPlayer")) return true;
-    if (strstr(className, "LeaveSession")) return true;
     if (strstr(className, "BanishPlayer")) return true;
-    if (strstr(className, "BreakInTarget")) return true;
-    if (strstr(className, "RemovePlayer")) return true;
     // When a phantom uses the Black Separation Crystal, the server sends
     // PushRequestRemoveSign to the host. The host's game processes this as
     // "phantom is gone" and tries to tear down the active session — crash.
-    // Block it so the host doesn't process the departure at all.
     if (strstr(className, "RemoveSign")) return true;
     // RejectSign can also carry a "phantom returned home" state that crashes
     // the host when processed mid-session.
